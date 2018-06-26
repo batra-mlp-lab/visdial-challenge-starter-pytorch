@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Distribution / packaging
+.Python
+env/
+build/
+
+# Datasets and preprocessed files
+data/*.zip
+data/*.json
+data/*.h5
+
+# Pretrained model checkpoints
+data/models/
+
+# Checkpoints directory
+checkpoints/
+
+# IPython Notebook
+.ipynb_checkpoints
+
+# virtualenv
+venv/
+ENV/
