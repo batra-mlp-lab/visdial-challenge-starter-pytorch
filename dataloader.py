@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 
 class VisDialDataset(Dataset):
@@ -143,6 +143,82 @@ class VisDialDataset(Dataset):
         assert split in self.subsets  # ['train', 'val', 'test']
         self._split = split
 
+    # ------------------------------------------------------------------------
+    # methods to override - __len__ and __getitem__ methods
+    # ------------------------------------------------------------------------
+
+    def __len__(self):
+        return self.num_data_points[self._split]
+
+    def __getitem__(self, idx):
+        dtype = self._split
+        item = {'index': idx}
+        item['num_rounds'] = self.data[dtype + '_num_rounds'][idx]
+
+        # get image features, caption tokens
+        item['img_feat'] = self.data[dtype + '_img_fv'][idx]
+        item['cap'] = self.data[dtype + '_cap'][idx]
+        item['cap_len'] = self.data[dtype + '_cap_len'][idx]
+
+        # get question tokens
+        item['ques_fwd'] = self.data[dtype + '_ques_fwd'][idx]
+        item['ques_len'] = self.data[dtype + '_ques_len'][idx]
+
+        # get history tokens
+        item['hist_len'] = self.data[dtype + '_hist_len'][idx]
+        item['hist'] = self.data[dtype + '_hist'][idx]
+
+        # get answers and caption tokens
+        item['ans_in'] = self.data[dtype + '_ans_in'][idx]
+        item['ans_out'] = self.data[dtype + '_ans_out'][idx]
+        item['ans_len'] = self.data[dtype + '_ans_len'][idx]
+
+        # get options tokens
+        opt_inds = self.data[dtype + '_opt'][idx]
+        opt_size = list(opt_inds.size())    
+        new_size = torch.Size(opt_size + [-1])
+        ind_vector = opt_inds.view(-1)
+
+        option_in = self.data[dtype + '_opt_list'].index_select(0, ind_vector)
+        option_in = option_in.view(new_size)
+
+        item['opt'] = option_in
+        item['opt_len'] = self.data[dtype + '_opt_len'][idx]
+        if dtype != 'test':
+            ans_ind = self.data[dtype + '_ans_ind'][idx]
+            item['ans_ind'] = ans_ind.view(-1)
+        return item
+
+    #-------------------------------------------------------------------------
+    # collate function utilized by dataloader for batching
+    #-------------------------------------------------------------------------
+
+    def collate_fn(self, batch):
+        dtype = self._split
+        merged_batch = {key: [d[key] for d in batch] for key in batch[0]}
+        out = {}
+        for key in merged_batch:
+            if key in {'index', 'num_rounds', 'cap_len', 'opt_len'}:
+                out[key] = torch.Tensor(merged_batch[key]).long()
+            else:
+                out[key] = torch.stack(merged_batch[key], 0)
+
+        # Dynamic shaping of padded batch
+        out['hist'] = out['hist'][:, :, -torch.max(out['hist_len']):].contiguous()
+        out['ques_fwd'] = out['ques_fwd'][:, :, -torch.max(out['ques_len']):].contiguous()
+        out['ans_in'] = out['ans_in'][:, :, :torch.max(out['ans_len'])].contiguous()
+        out['ans_out'] = out['ans_out'][:, :, :torch.max(out['ans_len'])].contiguous()
+
+        batch_keys = ['index', 'num_rounds', 'hist', 'cap',
+                      'ques_fwd', 'ans_in', 'ans_out', 'opt']
+        if dtype != 'test':
+            batch_keys.append('ans_ind')
+        return {key: out[key] for key in batch_keys}
+
+    #-------------------------------------------------------------------------
+    # preprocessing functions for questions, answers, history and options
+    #-------------------------------------------------------------------------
+
     def _process_questions(self, dtype):
         """Right align questions."""
         print("Right aligning questions for [{}]...".format(dtype))
@@ -187,13 +263,13 @@ class VisDialDataset(Dataset):
                         history[th_id][round_id][:hlen] = history[th_id][round_id - 1][:hlen]
                         history[th_id][round_id][hlen] = self.word2ind['<END>']
                         if qlen > 0:
-                            history[th_id][round_id][hlen:hlen + qlen] \
+                            history[th_id][round_id][hlen + 1:hlen + qlen + 1] \
                                 = questions[th_id][round_id - 1][:qlen]
                         if alen > 0:
                             # print(round_id, history[th_id][round_id][:10], answers[th_id][round_id][:10])
-                            history[th_id][round_id][hlen + qlen:hlen + qlen + alen] \
+                            history[th_id][round_id][hlen + qlen + 1:hlen + qlen + alen + 1] \
                                 = answers[th_id][round_id - 1][:alen]
-                        hlen = hlen + qlen + alen
+                        hlen = hlen + qlen + alen + 1
                     # else, history is just previous round question-answer pair
                     else:
                         if qlen > 0:
@@ -234,7 +310,7 @@ class VisDialDataset(Dataset):
                     if dtype != 'test':
                         print("Warning: empty answer at ({0} {1} {2})".format(
                                 th_id, round_id, length))
-            decode_out[th_id][round_id][length] = end_token_id
+                decode_out[th_id][round_id][length] = end_token_id
 
         self.data[dtype + '_ans_len'] += 1
         self.data[dtype + '_ans_in'] = decode_in
@@ -259,12 +335,12 @@ class VisDialDataset(Dataset):
         for opt_id in tqdm(range(opt_list_len)):
             length = lengths[opt_id]
             if length > 0:
-                decode_in[opt_id][:length + 1] = options[opt_id][:length]
+                decode_in[opt_id][1:length + 1] = options[opt_id][:length]
                 decode_out[opt_id][:length] = options[opt_id][:length]
-                decode_out[opt_id][length] = end_token_id
             else:
                 if dtype != 'test':
                     print("Warning: empty answer for {0} at {1}".format(dtype, opt_id))
+            decode_out[opt_id][length] = end_token_id
 
         self.data[dtype + '_opt_len'] = self.data[dtype + '_opt_len'] + 1
         self.data[dtype + '_opt_in'] = decode_in
