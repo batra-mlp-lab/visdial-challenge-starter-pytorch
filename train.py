@@ -78,7 +78,6 @@ print("Decoder: {}".format('disc'))  # todo : support more? or not?
 
 encoder = LateFusionEncoder(model_args)
 decoder = DiscriminativeDecoder(model_args)
-# todo - add weight init
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),

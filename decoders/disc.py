@@ -3,11 +3,11 @@ import torch.nn as nn
 
 
 class DiscriminativeDecoder(nn.Module):
-    def __init__(self, opt):
+    def __init__(self, args):
         super().__init__()
-        self.opt = opt
-        self.word_embed = nn.Embedding(opt.vocab_size, opt.embed_size)
-        self.option_rnn = nn.LSTM(opt.embed_size, opt.rnn_hidden_size, batch_first=True)
+        self.args = args
+        self.word_embed = nn.Embedding(args.vocab_size, args.embed_size)
+        self.option_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, batch_first=True)
         self.log_softmax = nn.LogSoftmax(dim=0)
 
     def forward(self, enc_out, options):
