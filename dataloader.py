@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 
 class VisDialDataset(Dataset):
@@ -24,18 +24,20 @@ class VisDialDataset(Dataset):
                                 help='JSON file with image paths and vocab')
         parser.add_argument('-img_norm', default=1, choices=[1, 0],
                                 help='normalize the image feature. 1=yes, 0=no')
+        parser.add_argument('-fast_mode', action='store_true',
+                                help='Keep 5 threads per split, meant for debugging')
         return parser
 
-    def __init__(self, opt, subsets):
+    def __init__(self, args, subsets):
         """Initialize the dataset with splits given by 'subsets', where
         subsets is taken from ['train', 'val', 'test']
         """
         super().__init__()
-        self.opt = opt
+        self.args = args
         self.subsets = tuple(subsets)
 
-        print("\nDataloader loading json file: {}".format(opt.input_json))
-        with open(opt.input_json, 'r') as info_file:
+        print("Dataloader loading json file: {}".format(args.input_json))
+        with open(args.input_json, 'r') as info_file:
             info = json.load(info_file)
             # possible keys: {'ind2word', 'word2ind', 'unique_img_(split)'}
             for key, value in iteritems(info):
@@ -58,11 +60,11 @@ class VisDialDataset(Dataset):
             for word, ind in iteritems(self.word2ind)
         }
 
-        print("Dataloader loading h5 file: {}".format(opt.input_ques))
-        ques_file = h5py.File(opt.input_ques, 'r')
+        print("Dataloader loading h5 file: {}".format(args.input_ques))
+        ques_file = h5py.File(args.input_ques, 'r')
 
-        print("Dataloader loading h5 file: {}".format(opt.input_img))
-        img_file = h5py.File(opt.input_img, 'r')
+        print("Dataloader loading h5 file: {}".format(args.input_img))
+        img_file = h5py.File(args.input_img, 'r')
 
         # load all data mats from ques_file into this
         self.data = {}
@@ -74,6 +76,8 @@ class VisDialDataset(Dataset):
             'ans_{}': '{}_ans',
             'ans_length_{}': '{}_ans_len',
             'img_pos_{}': '{}_img_pos',
+            'cap_{}': '{}_cap',
+            'cap_length_{}': '{}_cap_len',
             'opt_{}': '{}_opt',
             'opt_length_{}': '{}_opt_len',
             'opt_list_{}': '{}_opt_list',
@@ -94,23 +98,14 @@ class VisDialDataset(Dataset):
             print("Reading image features...")
             img_feats = torch.from_numpy(np.array(img_file['images_' + dtype]))
 
-            if opt.img_norm:
+            if args.img_norm:
                 print("Normalizing image features...")
                 img_feats = F.normalize(img_feats, dim=1, p=2)
 
             # save image features
-            self.data['{}_img_fv'.format(dtype)] = img_feats
-            img_fnames = getattr(self, 'unique_img_{}'.format(dtype))
-            self.data['{}_img_fnames'.format(dtype)] = img_fnames
-
-            # read the history
-            caption_map = {
-                'cap_{}': '{}_cap',
-                'cap_length_{}': '{}_cap_len'
-            }
-            for load_label, save_label in iteritems(caption_map):
-                mat = np.array(ques_file[load_label.format(dtype)], dtype='int32')
-                self.data[save_label.format(dtype)] = torch.from_numpy(mat)
+            self.data[dtype + '_img_fv'] = img_feats
+            img_fnames = getattr(self, 'unique_img_' + dtype)
+            self.data[dtype + '_img_fnames'] = img_fnames
 
             # record some stats, will be transferred to encoder/decoder later
             # assume similar stats across multiple data subsets
@@ -121,16 +116,23 @@ class VisDialDataset(Dataset):
             # maximum length of answer
             self.max_ans_len = self.data[dtype + '_ans'].size(2)
 
+        # reduce amount of data for preprocessing in fast mode
+        if args.fast_mode:
+            self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
+            self.data[dtype + '_img_fnames'] = self.data[dtype + '_img_fnames'][:5]
+
         self.num_data_points = {}
         for dtype in subsets:
-            self.num_data_points[dtype] = len(getattr(self, 'unique_img_{}'.format(dtype)))
+            self.num_data_points[dtype] = len(self.data[dtype + '_img_fv'])
+            print("[{0}] no. of threads: {1}".format(dtype, self.num_data_points[dtype]))
+        print("\tMax no. of rounds: {}".format(self.max_ques_count))
+        print("\tMax ques len: {}".format(self.max_ques_len))
+        print("\tMax ans len: {}".format(self.max_ans_len))
 
         # prepare dataset for training
         for dtype in subsets:
             self._process_questions(dtype)
             self._process_history(dtype)
-            self._process_options(dtype)
-            self._process_answers(dtype)
 
             # 1 indexed to 0 indexed
             self.data[dtype + '_opt'] -= 1
@@ -225,7 +227,7 @@ class VisDialDataset(Dataset):
             self.data[dtype + '_ques'], self.data[dtype + '_ques_len'])
 
     def _process_history(self, dtype):
-        """Process caption as well as right align history.
+        """Process caption as welltqdm as right align history.
         Optionally, concatenate history for lf-encoder.
         """
         captions = self.data[dtype + '_cap']
@@ -238,7 +240,7 @@ class VisDialDataset(Dataset):
         ans_len = self.data[dtype + '_ans_len']
         num_convs, num_rounds, max_ans_len = answers.size()
 
-        if self.opt.concat_history:
+        if self.args.concat_history:
             self.max_hist_len = min(num_rounds * (max_ques_len + max_ans_len), 300)
             history = torch.zeros(num_convs, num_rounds, self.max_hist_len).long()
         else:
@@ -258,7 +260,7 @@ class VisDialDataset(Dataset):
                     qlen = ques_len[th_id][round_id - 1]
                     alen = ans_len[th_id][round_id - 1]
                     # if concat_history, string together all previous question-answer pairs
-                    if self.opt.concat_history:
+                    if self.args.concat_history:
                         history[th_id][round_id][:hlen] = history[th_id][round_id - 1][:hlen]
                         history[th_id][round_id][hlen] = self.word2ind['<END>']
                         if qlen > 0:
@@ -284,66 +286,6 @@ class VisDialDataset(Dataset):
         print("Right aligning history for [{}]...".format(dtype))
         self.data[dtype + '_hist'] = self._right_align(history, hist_len)
         self.data[dtype + '_hist_len'] = hist_len
-
-    def _process_answers(self, dtype):
-        """Prefix answers with <START>, <END>, adjust answer lengths."""
-        answers = self.data[dtype + '_ans']
-        ans_len = self.data[dtype + '_ans_len']
-        num_convs, num_rounds, max_ans_len = answers.size()
-
-        decode_in = torch.zeros(num_convs, num_rounds, max_ans_len + 1).long()
-        decode_out = torch.zeros(num_convs, num_rounds, max_ans_len + 1).long()
-        
-        # decode_in begins with <START>
-        decode_in[:, :, 0] = self.word2ind['<START>']
-
-        # go over each answer and modify
-        end_token_id = self.word2ind['<END>']
-        for th_id in range(num_convs):
-            for round_id in range(num_rounds):
-                length = ans_len[th_id][round_id]
-                if length > 0:
-                    decode_in[th_id][round_id][1:length + 1] = answers[th_id][round_id][:length]
-                    decode_out[th_id][round_id][:length] = answers[th_id][round_id][:length]
-                else:
-                    if dtype != 'test':
-                        print("Warning: empty answer at ({0} {1} {2})".format(
-                                th_id, round_id, length))
-                decode_out[th_id][round_id][length] = end_token_id
-
-        self.data[dtype + '_ans_len'] += 1
-        self.data[dtype + '_ans_in'] = decode_in
-        self.data[dtype + '_ans_out'] = decode_out
-
-    def _process_options(self, dtype):
-        lengths = self.data[dtype + '_opt_len']
-        answers = self.data[dtype + '_ans']
-        ans_len = self.data[dtype + '_ans_len']
-        num_convs, _, max_ans_len = answers.size()
-
-        options = self.data[dtype + '_opt_list']
-        opt_list_len = options.size(0)
-        decode_in = torch.zeros(opt_list_len, max_ans_len + 1).long()
-        decode_out = torch.zeros(opt_list_len, max_ans_len + 1).long()
-
-        # decodeIn begins with <START>
-        decode_in[:, 0] = self.word2ind['<START>']
-
-        # go over each answer and modify
-        end_token_id = self.word2ind['<END>']
-        for opt_id in tqdm(range(opt_list_len)):
-            length = lengths[opt_id]
-            if length > 0:
-                decode_in[opt_id][1:length + 1] = options[opt_id][:length]
-                decode_out[opt_id][:length] = options[opt_id][:length]
-            else:
-                if dtype != 'test':
-                    print("Warning: empty answer for {0} at {1}".format(dtype, opt_id))
-            decode_out[opt_id][length] = end_token_id
-
-        self.data[dtype + '_opt_len'] = self.data[dtype + '_opt_len'] + 1
-        self.data[dtype + '_opt_in'] = decode_in
-        self.data[dtype + '_opt_out'] = decode_out
 
     @staticmethod
     def _right_align(sequences, lengths):
