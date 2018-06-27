@@ -44,7 +44,7 @@ class LateFusionEncoder(nn.Module):
         img = img.view(-1, self.opt.img_feature_size)
 
         # embed questions
-        ques = ques.view(-1, ques_fwd.size(2))
+        ques = ques.view(-1, ques.size(2))
         ques_embed, _ = self.ques_rnn(self.word_embed(ques), None)
         # pick the last time step (final question encoding)
         ques_embed = ques_embed[:, -1, :]
@@ -54,7 +54,7 @@ class LateFusionEncoder(nn.Module):
         hist_embed, _ = self.hist_rnn(self.word_embed(hist), None)
         hist_embed = hist_embed[:, -1, :]
 
-        fused_vector = torch.cat((img_feat, ques_embed, hist_embed), 1)
+        fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
         if self.opt.dropout > 0:
             fused_vector = F.dropout(fused_vector, self.opt.dropout,
                                      training=self.opt.training)
