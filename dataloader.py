@@ -112,6 +112,15 @@ class VisDialDataset(Dataset):
                 mat = np.array(ques_file[load_label.format(dtype)], dtype='int32')
                 self.data[save_label.format(dtype)] = torch.from_numpy(mat)
 
+            # record some stats, will be transferred to encoder/decoder later
+            # assume similar stats across multiple data subsets
+            # maximum number of questions per image, ideally 10
+            self.max_ques_count = self.data[dtype + '_ques'].size(1)
+            # maximum length of question
+            self.max_ques_len = self.data[dtype + '_ques'].size(2)
+            # maximum length of answer
+            self.max_ans_len = self.data[dtype + '_ans'].size(2)
+
         self.num_data_points = {}
         for dtype in subsets:
             self.num_data_points[dtype] = len(getattr(self, 'unique_img_{}'.format(dtype)))
@@ -155,10 +164,8 @@ class VisDialDataset(Dataset):
         item = {'index': idx}
         item['num_rounds'] = self.data[dtype + '_num_rounds'][idx]
 
-        # get image features, caption tokens
+        # get image features
         item['img_feat'] = self.data[dtype + '_img_fv'][idx]
-        item['cap'] = self.data[dtype + '_cap'][idx]
-        item['cap_len'] = self.data[dtype + '_cap_len'][idx]
 
         # get question tokens
         item['ques_fwd'] = self.data[dtype + '_ques_fwd'][idx]
@@ -167,11 +174,6 @@ class VisDialDataset(Dataset):
         # get history tokens
         item['hist_len'] = self.data[dtype + '_hist_len'][idx]
         item['hist'] = self.data[dtype + '_hist'][idx]
-
-        # get answers and caption tokens
-        item['ans_in'] = self.data[dtype + '_ans_in'][idx]
-        item['ans_out'] = self.data[dtype + '_ans_out'][idx]
-        item['ans_len'] = self.data[dtype + '_ans_len'][idx]
 
         # get options tokens
         opt_inds = self.data[dtype + '_opt'][idx]
@@ -206,11 +208,8 @@ class VisDialDataset(Dataset):
         # Dynamic shaping of padded batch
         out['hist'] = out['hist'][:, :, -torch.max(out['hist_len']):].contiguous()
         out['ques_fwd'] = out['ques_fwd'][:, :, -torch.max(out['ques_len']):].contiguous()
-        out['ans_in'] = out['ans_in'][:, :, :torch.max(out['ans_len'])].contiguous()
-        out['ans_out'] = out['ans_out'][:, :, :torch.max(out['ans_len'])].contiguous()
 
-        batch_keys = ['index', 'num_rounds', 'hist', 'cap',
-                      'ques_fwd', 'ans_in', 'ans_out', 'opt']
+        batch_keys = ['img_feat', 'hist', 'ques_fwd', 'opt']
         if dtype != 'test':
             batch_keys.append('ans_ind')
         return {key: out[key] for key in batch_keys}

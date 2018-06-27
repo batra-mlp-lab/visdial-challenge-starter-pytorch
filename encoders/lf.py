@@ -40,7 +40,7 @@ class LateFusionEncoder(nn.Module):
     def forward(self, img, ques, hist):
         # repeat image feature vectors to be provided for every round
         img = img.view(-1, 1, self.opt.img_feature_size)
-        img = img.repeat(1, self.opt.num_rounds, 1)
+        img = img.repeat(1, self.opt.max_ques_count, 1)
         img = img.view(-1, self.opt.img_feature_size)
 
         # embed questions
