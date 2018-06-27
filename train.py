@@ -5,6 +5,7 @@ import math
 import torch
 from torch import nn, optim
 from torch.autograd import Variable
+from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
@@ -17,19 +18,22 @@ VisDialDataset.add_cmdline_args(parser)
 LateFusionEncoder.add_cmdline_args(parser)
 
 parser.add_argument_group('Optimization related arguments')
-parser.add_argument('-batch_size', default=4, help='Batch size')
-parser.add_argument('-learning_rate', default=1e-3, help='Learning rate')
-parser.add_argument('-dropout', default=0.5, help='Dropout')
-parser.add_argument('-num_epochs', default=20, help='Epochs')
+parser.add_argument('-num_epochs', default=20, type=int, help='Epochs')
+parser.add_argument('-batch_size', default=4, type=int, help='Batch size')
+parser.add_argument('-lr', default=1e-3, type=float, help='Learning rate')
+parser.add_argument('-lr_decay_rate', default=0.9997592083, type=float, help='Decay for lr')
+parser.add_argument('-min_lr', default=5e-5, type=float, help='Minimum learning rate')
 parser.add_argument('-weight_init', default='xavier', choices=['xavier', 'kaiming'],
                         help='Weight initialization strategy')
-parser.add_argument('-gpuid', default=0, help='GPU id to use')
+parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
 
 # ----------------------------------------------------------------------------
 # input arguments and options
 # ----------------------------------------------------------------------------
 
 args = parser.parse_args()
+for arg in vars(args):
+    print('{:<20}: {}'.format(arg, getattr(args, arg)))
 
 # seed for reproducibility
 torch.manual_seed(1234)
@@ -46,7 +50,9 @@ model_args = args
 # loading dataset wrapping with a dataloader
 # ----------------------------------------------------------------------------
 
+# set this because only late fusion encoder is supported yet
 args.concat_history = True
+
 dataset = VisDialDataset(args, ['train'])
 dataloader = DataLoader(dataset,
                         batch_size=args.batch_size,
@@ -81,7 +87,8 @@ decoder = DiscriminativeDecoder(model_args)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),
-                       lr=args.learning_rate)
+                       lr=args.lr)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.lr_decay_rate)
 
 if args.gpuid >= 0:
     encoder = encoder.cuda()
@@ -98,35 +105,32 @@ decoder.train()
 
 running_loss = 0.0
 for epoch in range(1, model_args.num_epochs + 1):
-    for i, train_batch in enumerate(dataloader):
+    for i, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
         if args.gpuid >= 0:
-            for key in train_batch:
-                train_batch[key] = train_batch[key].cuda()
+            for key in batch:
+                batch[key] = Variable(batch[key].cuda())
         
-        # forward pass to encoder
-        img = Variable(train_batch['img_feat'])
-        ques = Variable(train_batch['ques_fwd'])
-        hist = Variable(train_batch['hist'])
-        enc_out = encoder(img, ques, hist)
-
-        # forward pass to decoder
-        options = Variable(train_batch['opt'])
-        ans_ind = Variable(train_batch['ans_ind'])
-        dec_out = decoder(enc_out, options)
-
-        cur_loss = criterion(dec_out, ans_ind.view(-1))
+        enc_out = encoder(batch['img_feat'], batch['ques_fwd'], batch['hist'])
+        dec_out = decoder(enc_out, batch['opt'])
+        cur_loss = criterion(dec_out, batch['ans_ind'].view(-1))
         cur_loss.backward()
 
+        optimizer.step()
+        gc.collect()
+
+        # --------------------------------------------------------------------
+        # update running loss and decay learning rates
+        # --------------------------------------------------------------------
         if running_loss > 0.0:
             running_loss = 0.95 * running_loss + 0.05 * cur_loss.data[0]
         else:
             running_loss = cur_loss.data[0]
-        optimizer.step()
-        gc.collect()
+        scheduler.step()
 
         # print after every few iterations
         if i % 100 == 0:
             # print current time, running average, learning rate, iteration, epoch
-            print('[Epoch:%d][Iter:%d][Loss:%.05f][lr:%f]' % (epoch, i, running_loss, args.learning_rate))
+            print("[Epoch:%d][Iter:%d][Loss:%.05f][lr:%f]" % 
+                (epoch, i, running_loss, optimizer.param_groups[0]['lr']))

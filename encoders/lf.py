@@ -10,8 +10,6 @@ class LateFusionEncoder(nn.Module):
         parser.add_argument_group('Encoder specific arguments')
         parser.add_argument('-img_feature_size', default=4096,
                                 help='Channel size of image feature')
-        parser.add_argument('-img_spatial_size', default=14,
-                                help='JSON file with image paths and vocab')
         parser.add_argument('-embed_size', default=300,
                                 help='Size of the input word embedding')
         parser.add_argument('-rnn_hidden_size', default=512,
@@ -20,6 +18,7 @@ class LateFusionEncoder(nn.Module):
                                 help='Number of layers in LSTM')
         parser.add_argument('-max_history_len', default=60,
                                 help='Size of the multimodal embedding')
+        parser.add_argument('-dropout', default=0.5, help='Dropout')
         return parser
 
     def __init__(self, args):
