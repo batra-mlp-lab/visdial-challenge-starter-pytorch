@@ -129,9 +129,8 @@ class VisDialDataset(Dataset):
         print("\tMax ques len: {}".format(self.max_ques_len))
         print("\tMax ans len: {}".format(self.max_ans_len))
 
-        # prepare dataset for training
+        # prepare history
         for dtype in subsets:
-            self._process_questions(dtype)
             self._process_history(dtype)
 
             # 1 indexed to 0 indexed
@@ -168,9 +167,10 @@ class VisDialDataset(Dataset):
 
         # get image features
         item['img_feat'] = self.data[dtype + '_img_fv'][idx]
+        item['img_fnames'] = self.data[dtype + '_img_fnames'][idx]
 
         # get question tokens
-        item['ques_fwd'] = self.data[dtype + '_ques_fwd'][idx]
+        item['ques'] = self.data[dtype + '_ques'][idx]
         item['ques_len'] = self.data[dtype + '_ques_len'][idx]
 
         # get history tokens
@@ -186,8 +186,12 @@ class VisDialDataset(Dataset):
         option_in = self.data[dtype + '_opt_list'].index_select(0, ind_vector)
         option_in = option_in.view(new_size)
 
+        opt_len = self.data[dtype + '_opt_len'].index_select(0, ind_vector)
+        opt_len = opt_len.view(opt_size)
+        print(torch.max(opt_len))
+
         item['opt'] = option_in
-        item['opt_len'] = self.data[dtype + '_opt_len'][idx]
+        item['opt_len'] = opt_len
         if dtype != 'test':
             ans_ind = self.data[dtype + '_ans_ind'][idx]
             item['ans_ind'] = ans_ind.view(-1)
@@ -202,34 +206,31 @@ class VisDialDataset(Dataset):
         merged_batch = {key: [d[key] for d in batch] for key in batch[0]}
         out = {}
         for key in merged_batch:
-            if key in {'index', 'num_rounds', 'cap_len', 'opt_len'}:
+            if key in {'index', 'num_rounds', 'img_fnames'}:
+                out[key] = merged_batch[key]
+            elif key in {'cap_len'}:
                 out[key] = torch.Tensor(merged_batch[key]).long()
             else:
                 out[key] = torch.stack(merged_batch[key], 0)
 
         # Dynamic shaping of padded batch
-        out['hist'] = out['hist'][:, :, -torch.max(out['hist_len']):].contiguous()
-        out['ques_fwd'] = out['ques_fwd'][:, :, -torch.max(out['ques_len']):].contiguous()
+        out['hist'] = out['hist'][:, :, :torch.max(out['hist_len'])].contiguous()
+        out['ques'] = out['ques'][:, :, :torch.max(out['ques_len'])].contiguous()
+        out['opt'] = out['opt'][:, :, :, :torch.max(out['opt_len'])].contiguous()
 
-        batch_keys = ['img_feat', 'hist', 'ques_fwd', 'opt']
+        batch_keys = ['img_fnames', 'num_rounds', 'img_feat', 'hist',
+                      'hist_len', 'ques', 'ques_len', 'opt', 'opt_len']
         if dtype != 'test':
             batch_keys.append('ans_ind')
         return {key: out[key] for key in batch_keys}
 
     #-------------------------------------------------------------------------
-    # preprocessing functions for questions, answers, history and options
+    # preprocessing functions
     #-------------------------------------------------------------------------
 
-    def _process_questions(self, dtype):
-        """Right align questions."""
-        print("Right aligning questions for [{}]...".format(dtype))
-        self.data[dtype + '_ques_fwd'] = self._right_align(
-            self.data[dtype + '_ques'], self.data[dtype + '_ques_len'])
-
     def _process_history(self, dtype):
-        """Process caption as welltqdm as right align history.
-        Optionally, concatenate history for lf-encoder.
-        """
+        """Process caption as well as history. Optionally, concatenate history 
+        for lf-encoder."""
         captions = self.data[dtype + '_cap']
         questions = self.data[dtype + '_ques']
         ques_len = self.data[dtype + '_ques_len']
@@ -282,32 +283,20 @@ class VisDialDataset(Dataset):
                 # save the history length
                 hist_len[th_id][round_id] = hlen
 
-        # right align history and then save
-        print("Right aligning history for [{}]...".format(dtype))
-        self.data[dtype + '_hist'] = self._right_align(history, hist_len)
+        self.data[dtype + '_hist'] = history
         self.data[dtype + '_hist_len'] = hist_len
 
-    @staticmethod
-    def _right_align(sequences, lengths):
-        """Right align the question/history tokens in 3d volume."""
-        raligned = sequences.clone().fill_(0)
-        num_dims = sequences.dim()
 
-        if num_dims == 3:
-            num_imgs, num_ques, max_ques_len = sequences.size()
-            for img_id in tqdm(range(num_imgs)):  # total images
-                for ques_id in range(num_ques):  # total questions per image
-                    # do only for non zero sequence counts
-                    if lengths[img_id][ques_id] > 0:
-                        raligned[img_id][ques_id][
-                            (max_ques_len - lengths[img_id][ques_id]):] = \
-                            sequences[img_id][ques_id][:lengths[img_id][ques_id]]
-        elif num_dims == 2:
-            # handle 2-dimensional matrices as well
-            num_imgs, max_ques_len = sequences.size()
-            for img_id in tqdm(range(num_imgs)):
-                # do only for non zero sequence counts
-                if lengths[img_id] > 0:
-                    raligned[img_id][(max_ques_len - lengths[img_id]):] = \
-                        sequences[img_id][:lengths[img_id]]
-        return raligned
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    VisDialDataset.add_cmdline_args(parser)
+    args = parser.parse_args()
+    args.concat_history = True
+
+    from torch.utils.data import DataLoader
+    ds = VisDialDataset(args, ['test'])
+    dl = DataLoader(ds, shuffle=False, batch_size=2, collate_fn=ds.collate_fn)
+    for batch in dl:
+        print(batch)
+        break
