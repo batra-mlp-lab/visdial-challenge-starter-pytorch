@@ -10,7 +10,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
-
+from utils.metrics import process_ranks
 
 parser = argparse.ArgumentParser()
 VisDialDataset.add_cmdline_args(parser)
@@ -36,9 +36,13 @@ parser.add_argument('-save_path', default='logs/ranks.json',
 # ----------------------------------------------------------------------------
 
 args = parser.parse_args()
-if args.use_gt and args.split == 'test':
-    print("Warning: No ground truth available for test split, changing use_gt to False.")
-    args.use_gt = False
+if args.use_gt:
+    if args.split == 'test':
+        print("Warning: No ground truth for test split, changing use_gt to False.")
+        args.use_gt = False
+    elif args.split == 'val' and args.save_ranks:
+        print("Warning: Cannot generate submission json if use_gt is True.")
+        args.save_ranks = False
 
 # seed for reproducibility
 torch.manual_seed(1234)
@@ -102,8 +106,23 @@ encoder.eval()
 decoder.eval()
 
 if args.use_gt:
-    pass
-    # evaluation and retrieval
+    all_ranks = []
+    for i, batch in enumerate(tqdm(dataloader)):
+        if args.gpuid >= 0:
+            for key in batch:
+                if not isinstance(batch[key], list):
+                    batch[key] = Variable(batch[key].cuda(), volatile=True)
+
+        enc_out = encoder(batch['img_feat'], batch['ques_fwd'], batch['hist'])
+        dec_out = decoder(enc_out, batch['opt'])
+        scores = dec_out.data
+        gt_pos = batch['ans_ind'].data.view(-1, 1)
+        gt_score = scores.gather(1, gt_pos)
+        ranks = scores.gt(gt_score.expand_as(scores))
+        all_ranks.append(ranks.sum(1) + 1)
+    all_ranks = torch.stack(all_ranks, 0)
+    process_ranks(all_ranks)
+    gc.collect()
 else:
     ranks_json = []
     for i, batch in enumerate(tqdm(dataloader)):
