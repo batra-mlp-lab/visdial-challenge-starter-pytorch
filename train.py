@@ -3,7 +3,6 @@ import datetime
 import gc
 import math
 import os
-import time
 
 import torch
 from torch import nn, optim
@@ -22,12 +21,14 @@ LateFusionEncoder.add_cmdline_args(parser)
 
 parser.add_argument_group('Optimization related arguments')
 parser.add_argument('-num_epochs', default=20, type=int, help='Epochs')
-parser.add_argument('-batch_size', default=16, type=int, help='Batch size')
+parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
 parser.add_argument('-lr', default=1e-3, type=float, help='Learning rate')
 parser.add_argument('-lr_decay_rate', default=0.9997592083, type=float, help='Decay for lr')
 parser.add_argument('-min_lr', default=5e-5, type=float, help='Minimum learning rate')
 parser.add_argument('-weight_init', default='xavier', choices=['xavier', 'kaiming'],
                         help='Weight initialization strategy')
+parser.add_argument('-overfit', action='store_true',
+                        help='Overfit on 5 examples, meant for debugging')
 parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
 
 parser.add_argument_group('Checkpointing related arguments')
@@ -96,8 +97,6 @@ for key in {'num_data_points', 'vocab_size', 'max_ques_count',
             'max_ques_len', 'max_ans_len'}:
     setattr(model_args, key, getattr(dataset, key))
 
-model_args.training = True
-
 # iterations per epoch
 setattr(args, 'iter_per_epoch', 
     math.ceil(dataset.num_data_points['train'] / args.batch_size))
@@ -116,7 +115,7 @@ else:
     print("Decoder: {}".format('disc'))
 
     encoder = LateFusionEncoder(model_args)
-    decoder = DiscriminativeDecoder(model_args)
+    decoder = DiscriminativeDecoder(model_args, encoder)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),
@@ -132,24 +131,26 @@ if args.gpuid >= 0:
 # training
 # ----------------------------------------------------------------------------
 
-print("Training start time: {}".format(
-    datetime.datetime.strftime(datetime.datetime.utcnow(), '%d-%b-%Y-%H:%M:%S')))
 encoder.train()
 decoder.train()
 os.makedirs(args.save_path, exist_ok=True)
 
 running_loss = 0.0
-train_begin = time.time()
+train_begin = datetime.datetime.utcnow()
+print("Training start time: {}".format(
+    datetime.datetime.strftime(train_begin, '%d-%b-%Y-%H:%M:%S')))
+
 for epoch in range(1, model_args.num_epochs + 1):
     for i, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
         if args.gpuid >= 0:
             for key in batch:
-                batch[key] = Variable(batch[key].cuda())
-        
-        enc_out = encoder(batch['img_feat'], batch['ques_fwd'], batch['hist'])
-        dec_out = decoder(enc_out, batch['opt'])
+                if not isinstance(batch[key], list):
+                    batch[key] = Variable(batch[key].cuda())
+
+        enc_out = encoder(batch)
+        dec_out = decoder(enc_out, batch)
         cur_loss = criterion(dec_out, batch['ans_ind'].view(-1))
         cur_loss.backward()
 
@@ -175,8 +176,8 @@ for epoch in range(1, model_args.num_epochs + 1):
         if i % 100 == 0:
             # print current time, running average, learning rate, iteration, epoch
             print("[{}][Epoch: {:3d}][Iter: {:6d}][Loss: {:6f}][lr: {:7f}]".format(
-                datetime.timedelta(int(time.time() - train_begin)), epoch,
-                    epoch * args.iter_per_epoch + i, running_loss,
+                datetime.datetime.utcnow() - train_begin, epoch,
+                    (epoch - 1) * args.iter_per_epoch + i, running_loss,
                     optimizer.param_groups[0]['lr']))
 
     # ------------------------------------------------------------------------

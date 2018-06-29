@@ -1,16 +1,22 @@
 import torch
 import torch.nn as nn
 
+from utils.dynamic_rnn import DynamicRNN
+
 
 class DiscriminativeDecoder(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, encoder):
         super().__init__()
         self.args = args
-        self.word_embed = nn.Embedding(args.vocab_size, args.embed_size)
+        # share word embedding
+        self.word_embed = encoder.word_embed
         self.option_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, batch_first=True)
         self.log_softmax = nn.LogSoftmax(dim=0)
 
-    def forward(self, enc_out, options):
+        # options are variable length padded sequences, use DynamicRNN
+        self.option_rnn = DynamicRNN(self.option_rnn)
+
+    def forward(self, enc_out, batch):
         """Given encoder output `enc_out` and candidate output option sequences,
         predict a score for each output sequence.
 
@@ -21,8 +27,11 @@ class DiscriminativeDecoder(nn.Module):
         options : torch.LongTensor
             Candidate answer option sequences. (b, num_options, max_len + 1) 
         """
+        options = batch['opt']
+        options_len = batch['opt_len']
         # word embed options
         options = options.view(options.size(0) * options.size(1), options.size(2), -1)
+        options_len = options_len.view(options_len.size(0) * options_len.size(1), -1)
         batch_size, num_options, max_opt_len = options.size()
         options = options.contiguous().view(-1, num_options * max_opt_len)
         options = self.word_embed(options)
@@ -32,9 +41,8 @@ class DiscriminativeDecoder(nn.Module):
         scores = []
         for opt_id in range(num_options):
             opt = options[:, opt_id, :, :]
-            opt_embed, _ = self.option_rnn(opt, None)
-            # choose the last time step
-            opt_embed = opt_embed[:, -1, :]
+            opt_len = options_len[:, opt_id]
+            opt_embed = self.option_rnn(opt, opt_len)
             scores.append(torch.sum(opt_embed * enc_out, 1))
 
         # return scores

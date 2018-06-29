@@ -24,7 +24,8 @@ parser.add_argument('-use_gt', action='store_true',
                         help='Whether to use ground truth for retrieving ranks')
 parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
 parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
-
+parser.add_argument('-overfit', action='store_true',
+                        help='Use a batch of only 5 examples, useful got debugging')
 parser.add_argument_group('Submission related arguments')
 parser.add_argument('-save_ranks', action='store_true',
                         help='Whether to save retrieved ranks')
@@ -60,10 +61,6 @@ components = torch.load(args.load_path)
 model_args = components['encoder'].args
 model_args.gpuid = args.gpuid
 model_args.batch_size = args.batch_size
-
-# todo: remove this by saving only state dicts
-components['encoder'].args.training = False
-components['decoder'].args.training = False
 
 # this is required by dataloader
 args.img_norm = components['encoder'].args.img_norm
@@ -113,9 +110,8 @@ if args.use_gt:
                 if not isinstance(batch[key], list):
                     batch[key] = Variable(batch[key].cuda(), volatile=True)
 
-        enc_out = encoder(batch['img_feat'], batch['ques_fwd'], batch['hist'])
-        dec_out = decoder(enc_out, batch['opt'])
-        scores = dec_out.data
+        enc_out = encoder(batch)
+        scores = decoder(enc_out, batch).data
         gt_pos = batch['ans_ind'].data.view(-1, 1)
         gt_score = scores.gather(1, gt_pos)
         ranks = scores.gt(gt_score.expand_as(scores))
@@ -131,8 +127,8 @@ else:
                 if not isinstance(batch[key], list):
                     batch[key] = Variable(batch[key].cuda(), volatile=True)
 
-        enc_out = encoder(batch['img_feat'], batch['ques_fwd'], batch['hist'])
-        dec_out = decoder(enc_out, batch['opt'])
+        enc_out = encoder(batch)
+        dec_out = decoder(enc_out, batch)
         # sort in descending order - largest score gets highest rank
         sorted_ranks, ranked_idx = dec_out.data.sort(1, descending=True)
 
