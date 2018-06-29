@@ -24,8 +24,6 @@ class VisDialDataset(Dataset):
                                 help='JSON file with image paths and vocab')
         parser.add_argument('-img_norm', default=1, choices=[1, 0],
                                 help='normalize the image feature. 1=yes, 0=no')
-        parser.add_argument('-fast_mode', action='store_true',
-                                help='Keep 5 threads per split, meant for debugging')
         return parser
 
     def __init__(self, args, subsets):
@@ -117,7 +115,7 @@ class VisDialDataset(Dataset):
             self.max_ans_len = self.data[dtype + '_ans'].size(2)
 
         # reduce amount of data for preprocessing in fast mode
-        if args.fast_mode:
+        if args.overfit:
             self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
             self.data[dtype + '_img_fnames'] = self.data[dtype + '_img_fnames'][:5]
 
@@ -188,7 +186,6 @@ class VisDialDataset(Dataset):
 
         opt_len = self.data[dtype + '_opt_len'].index_select(0, ind_vector)
         opt_len = opt_len.view(opt_size)
-        print(torch.max(opt_len))
 
         item['opt'] = option_in
         item['opt_len'] = opt_len
@@ -285,18 +282,3 @@ class VisDialDataset(Dataset):
 
         self.data[dtype + '_hist'] = history
         self.data[dtype + '_hist_len'] = hist_len
-
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    VisDialDataset.add_cmdline_args(parser)
-    args = parser.parse_args()
-    args.concat_history = True
-
-    from torch.utils.data import DataLoader
-    ds = VisDialDataset(args, ['test'])
-    dl = DataLoader(ds, shuffle=False, batch_size=2, collate_fn=ds.collate_fn)
-    for batch in dl:
-        print(batch)
-        break

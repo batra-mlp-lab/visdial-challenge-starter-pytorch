@@ -2,6 +2,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from utils.dynamic_rnn import DynamicRNN
+
 
 class LateFusionEncoder(nn.Module):
 
@@ -30,6 +32,12 @@ class LateFusionEncoder(nn.Module):
                                 batch_first=True, dropout=args.dropout)
         self.ques_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, args.num_layers,
                                 batch_first=True, dropout=args.dropout)
+        self.dropout = nn.Dropout(p=args.dropout)
+
+        # questions and history are right padded sequences of variable length
+        # use the DynamicRNN utility module to handle them properly
+        self.hist_rnn = DynamicRNN(self.hist_rnn)
+        self.ques_rnn = DynamicRNN(self.ques_rnn)
 
         # fusion layer
         fusion_size = args.img_feature_size + args.rnn_hidden_size * 2
@@ -39,8 +47,13 @@ class LateFusionEncoder(nn.Module):
             nn.init.xavier_uniform(self.fusion.weight.data)
         elif args.weight_init == 'kaiming':
             nn.init.kaiming_uniform(self.fusion.weight.data)
+        nn.init.constant(self.fusion.bias.data, 0)
 
-    def forward(self, img, ques, hist):
+    def forward(self, batch):
+        img = batch['img_feat']
+        ques = batch['ques']
+        hist = batch['hist']
+
         # repeat image feature vectors to be provided for every round
         img = img.view(-1, 1, self.args.img_feature_size)
         img = img.repeat(1, self.args.max_ques_count, 1)
@@ -48,19 +61,16 @@ class LateFusionEncoder(nn.Module):
 
         # embed questions
         ques = ques.view(-1, ques.size(2))
-        ques_embed, _ = self.ques_rnn(self.word_embed(ques), None)
-        # pick the last time step (final question encoding)
-        ques_embed = ques_embed[:, -1, :]
+        ques_embed = self.word_embed(ques)
+        ques_embed = self.ques_rnn(ques_embed, batch['ques_len'])
 
         # embed history
         hist = hist.view(-1, hist.size(2))
-        hist_embed, _ = self.hist_rnn(self.word_embed(hist), None)
-        hist_embed = hist_embed[:, -1, :]
+        hist_embed = self.word_embed(hist)
+        hist_embed = self.hist_rnn(hist_embed, batch['hist_len'])
 
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
-        if self.args.dropout > 0:
-            fused_vector = F.dropout(fused_vector, self.args.dropout,
-                                     training=self.args.training)
+        fused_vector = self.dropout(fused_vector)
 
         fused_embedding = F.tanh(self.fusion(fused_vector))
         return fused_embedding
