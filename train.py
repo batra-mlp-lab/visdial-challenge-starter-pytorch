@@ -63,14 +63,12 @@ model_args = args
 
 if args.load_path != '':
     components = torch.load(args.load_path)
-    model_args = components['encoder'].args
+    model_args = components['encoder'].pop('args')
     model_args.gpuid = args.gpuid
     model_args.batch_size = args.batch_size
 
-    # lr is saved separately as it changes during training
-    args.lr = components['lr']
     # this is required by dataloader
-    args.img_norm = components['encoder'].args.img_norm
+    args.img_norm = components['encoder']['args']img_norm
 
 # set this because only late fusion encoder is supported yet
 args.concat_history = True
@@ -106,21 +104,19 @@ print("{} iter per epoch.".format(args.iter_per_epoch))
 # setup the model
 # ----------------------------------------------------------------------------
 
-if args.load_path != '':
-    encoder = components['encoder']
-    decoder = components['decoder']
-    print("Loaded model from {}".format(args.load_path))
-else:
-    print("Encoder: {}".format('lf-ques-im-hist'))  # todo: support more encoders
-    print("Decoder: {}".format('disc'))
-
-    encoder = LateFusionEncoder(model_args)
-    decoder = DiscriminativeDecoder(model_args, encoder)
-
+encoder = LateFusionEncoder(model_args)
+decoder = DiscriminativeDecoder(model_args, encoder)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),
                        lr=args.lr)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=args.lr_decay_rate)
+
+if args.load_path != '':
+    encoder.load_state_dict(components['encoder'])
+    decoder.load_state_dict(components['decoder'])
+    print("Loaded model from {}".format(args.load_path))
+print("Encoder: {}".format('lf-ques-im-hist'))  # todo: support more encoders
+print("Decoder: {}".format('disc'))
 
 if args.gpuid >= 0:
     encoder = encoder.cuda()
@@ -149,6 +145,9 @@ for epoch in range(1, model_args.num_epochs + 1):
                 if not isinstance(batch[key], list):
                     batch[key] = Variable(batch[key].cuda())
 
+        # --------------------------------------------------------------------
+        # forward-backward pass and optimizer step
+        # --------------------------------------------------------------------
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
         cur_loss = criterion(dec_out, batch['ans_ind'].view(-1))
@@ -160,7 +159,6 @@ for epoch in range(1, model_args.num_epochs + 1):
         # --------------------------------------------------------------------
         # update running loss and decay learning rates
         # --------------------------------------------------------------------
-
         if running_loss > 0.0:
             running_loss = 0.95 * running_loss + 0.05 * cur_loss.data[0]
         else:
@@ -170,9 +168,8 @@ for epoch in range(1, model_args.num_epochs + 1):
             scheduler.step()
 
         # --------------------------------------------------------------------
-        # print after ever few iterations
+        # print after every few iterations
         # --------------------------------------------------------------------
-
         if i % 100 == 0:
             # print current time, running average, learning rate, iteration, epoch
             print("[{}][Epoch: {:3d}][Iter: {:6d}][Loss: {:6f}][lr: {:7f}]".format(
@@ -185,10 +182,13 @@ for epoch in range(1, model_args.num_epochs + 1):
     # ------------------------------------------------------------------------
     if epoch % args.save_step == 0:
         torch.save({
-            'encoder': encoder,
-            'decoder': decoder,
-            'lr': optimizer.param_groups[0]['lr']
+            'encoder': encoder.state_dict(),
+            'decoder': decoder.state_dict(),
+            'optimizer': optimizer.state_dict()
         }, os.path.join(args.save_path, 'model_epoch_{}.pth'.format(epoch)))
 
-torch.save({'encoder': encoder, 'decoder': decoder},
-    os.path.join(args.save_path, 'model_final.pth'))
+torch.save({
+    'encoder': encoder.state_dict(),
+    'decoder': decoder.state_dict(),
+    'optimizer': optimizer.state_dict()
+}, os.path.join(args.save_path, 'model_final.pth'))

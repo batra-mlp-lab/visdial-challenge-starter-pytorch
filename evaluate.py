@@ -10,6 +10,8 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
+from encoders.lf import LateFusionEncoder
+from decoders.disc import DiscriminativeDecoder
 from utils.metrics import process_ranks
 
 parser = argparse.ArgumentParser()
@@ -57,7 +59,7 @@ if args.gpuid >= 0:
 # ----------------------------------------------------------------------------
 
 components = torch.load(args.load_path)
-model_args = components['encoder'].args
+model_args = components['encoder'].pop('args')
 model_args.gpuid = args.gpuid
 model_args.batch_size = args.batch_size
 
@@ -80,12 +82,20 @@ dataloader = DataLoader(dataset,
                         shuffle=False,
                         collate_fn=dataset.collate_fn)
 
+# iterations per epoch
+setattr(args, 'iter_per_epoch', 
+    math.ceil(dataset.num_data_points[args.split] / args.batch_size))
+print("{} iter per epoch.".format(args.iter_per_epoch))
+
 # ----------------------------------------------------------------------------
 # setup the model
 # ----------------------------------------------------------------------------
 
-encoder = components['encoder']
-decoder = components['decoder']
+encoder = LateFusionEncoder(model_args)
+encoder.load_state_dict(components['encoder'])
+
+decoder = DiscriminativeDecoder(model_args, encoder)
+decoder.load_state_dict(components['decoder'])
 print("Loaded model from {}".format(args.load_path))
 
 if args.gpuid >= 0:
@@ -102,6 +112,9 @@ encoder.eval()
 decoder.eval()
 
 if args.use_gt:
+    # ------------------------------------------------------------------------
+    # calculate automatic metrics and finish
+    # ------------------------------------------------------------------------
     all_ranks = []
     for i, batch in enumerate(tqdm(dataloader)):
         if args.gpuid >= 0:
@@ -119,6 +132,9 @@ if args.use_gt:
     process_ranks(all_ranks)
     gc.collect()
 else:
+    # ------------------------------------------------------------------------
+    # prepare json for submission
+    # ------------------------------------------------------------------------
     ranks_json = []
     for i, batch in enumerate(tqdm(dataloader)):
         if args.gpuid >= 0:
@@ -143,7 +159,7 @@ else:
             # cast into types explicitly to ensure no errors in schema
             if args.split == 'test':
                 ranks_json.append({
-                    'image_id': int(batch['img_fnames'][i][-16:-4]),  # convert path to id
+                    'image_id': int(batch['img_fnames'][i][-16:-4]),
                     'round_id': int(batch['num_rounds'][i]),
                     'ranks': list(ranks[i][batch['num_rounds'][i] - 1])
                 })

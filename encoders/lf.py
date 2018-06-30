@@ -74,3 +74,8 @@ class LateFusionEncoder(nn.Module):
 
         fused_embedding = F.tanh(self.fusion(fused_vector))
         return fused_embedding
+
+    def state_dict(self):
+        st_dict = super().state_dict()
+        st_dict['args'] = self.args
+        return st_dict
