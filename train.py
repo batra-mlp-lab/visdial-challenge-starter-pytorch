@@ -63,12 +63,12 @@ model_args = args
 
 if args.load_path != '':
     components = torch.load(args.load_path)
-    model_args = components['encoder'].pop('args')
+    model_args = components['model_args']
     model_args.gpuid = args.gpuid
     model_args.batch_size = args.batch_size
 
     # this is required by dataloader
-    args.img_norm = components['encoder']['args']img_norm
+    args.img_norm = model_args.img_norm
 
 # set this because only late fusion encoder is supported yet
 args.concat_history = True
@@ -184,11 +184,13 @@ for epoch in range(1, model_args.num_epochs + 1):
         torch.save({
             'encoder': encoder.state_dict(),
             'decoder': decoder.state_dict(),
-            'optimizer': optimizer.state_dict()
+            'optimizer': optimizer.state_dict(),
+            'model_args': encoder.args
         }, os.path.join(args.save_path, 'model_epoch_{}.pth'.format(epoch)))
 
 torch.save({
     'encoder': encoder.state_dict(),
     'decoder': decoder.state_dict(),
-    'optimizer': optimizer.state_dict()
+    'optimizer': optimizer.state_dict(),
+    'model_args': encoder.args
 }, os.path.join(args.save_path, 'model_final.pth'))

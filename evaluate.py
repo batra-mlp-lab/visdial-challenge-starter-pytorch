@@ -2,6 +2,7 @@ import argparse
 import datetime
 import gc
 import json
+import math
 import os
 from tqdm import tqdm
 
@@ -28,6 +29,7 @@ parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
 parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
 parser.add_argument('-overfit', action='store_true',
                         help='Use a batch of only 5 examples, useful got debugging')
+
 parser.add_argument_group('Submission related arguments')
 parser.add_argument('-save_ranks', action='store_true',
                         help='Whether to save retrieved ranks')
@@ -60,12 +62,12 @@ if args.gpuid >= 0:
 # ----------------------------------------------------------------------------
 
 components = torch.load(args.load_path)
-model_args = components['encoder'].pop('args')
+model_args = components['model_args']
 model_args.gpuid = args.gpuid
 model_args.batch_size = args.batch_size
 
 # this is required by dataloader
-args.img_norm = components['encoder'].args.img_norm
+args.img_norm = model_args.img_norm
 
 # set this because only late fusion encoder is supported yet
 args.concat_history = True
@@ -165,7 +167,7 @@ else:
                     'ranks': list(ranks[i][batch['num_rounds'][i] - 1])
                 })
             else:
-                for j in range(len(batch['num_rounds'][i])):
+                for j in range(batch['num_rounds'][i]):
                     ranks_json.append({
                         'image_id': int(batch['img_fnames'][i][-16:-4]),
                         'round_id': int(j + 1),
