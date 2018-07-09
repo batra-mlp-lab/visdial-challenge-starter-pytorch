@@ -160,7 +160,7 @@ To generate a submission file for `val` phase:
 python evaluate.py -split val -load_path /path/to/pth/checkpoint -save_ranks -save_path /path/to/submission/json
 ```
 
-To generate a submission for `test-std` or `test-challenge` phase, replace `-split val` with `-split test`.
+To generate a submission file for `test-std` or `test-challenge` phase, replace `-split val` with `-split test`.
 
 
 Pretrained Checkpoint
@@ -172,7 +172,7 @@ Performance on `v1.0` val (trained on `v1.0` train):
 
 |  R@1   |  R@5   |  R@10  | MeanR  |  MRR   |
 | ------ | ------ | ------ | ------ | ------ |
-| 0.4015 | 0.7147 | 0.8245 | 6.3601 | 0.5481 |
+| 0.4145 | 0.7292 | 0.8351 | 6.0587 | 0.5602 |
 
 
 Acknowledgements
@@ -204,4 +204,4 @@ BSD
 [14]: https://www.github.com/batra-mlp-lab/visdial-rl
 [15]: https://www.github.com/batra-mlp-lab/visdial
 [16]: https://visualdialog.org/challenge/2018#faq
-[17]: https://www.dropbox.com/s/sgojylygmz56cz7/lf-ques-im-hist-vgg16-train-2.pth
+[17]: https://www.dropbox.com/s/w40h26rhsqpbmjx/lf-ques-im-hist-vgg16-train.pth
