@@ -9,7 +9,8 @@ PyTorch starter code for [Visual Dialog Challenge][1].
   * [Download Preprocessed Data](#download-preprocessed-data)
   * [Training](#training)
   * [Evaluation](#evaluation)
-  * [Generate Submission](#submission)
+  * [Generate Submission](#generate-submission)
+  * [Pretrained Checkpoint](#pretrained-checkpoint)
   * [Acknowledgements](#acknowledgements)
   * [License](#license)
 
@@ -130,7 +131,7 @@ python train.py -encoder lf-ques-im-hist -decoder disc -gpuid 0  # other args
 
 The script has all the default arguments, so it works without specifying any arguments. Execute the script with `-h` to see a list of available arguments which can be changed as per need (such as learning rate, epochs, batch size, etc).
 
-To extend this starter code, add your own encoder/decoder modules into their respective directories and put their choices in `__init__.py`, as well as their names in command line arguments of `train.py`.
+To extend this starter code, add your own encoder/decoder modules into their respective directories and put their choices in command line arguments of `train.py`.
 
 We have an `-overfit` flag, which can be useful for rapid debugging. It takes a batch of 5 examples and overfits the model on them.
 
@@ -168,13 +169,10 @@ Pretrained Checkpoint
 Pretrained checkpoint of Late Fusion Encoder - Discriminative Decoder model is available [here][17].
 
 Performance on `v1.0` val (trained on `v1.0` train):
-```
-r@1: 0.4015
-r@5: 0.7147
-r@10: 0.8245
-meanR: 6.3601
-meanRR: 0.5481
-```
+
+|  R@1   |  R@5   |  R@10  | MeanR  |  MRR   |
+| ------ | ------ | ------ | ------ | ------ |
+| 0.4015 | 0.7147 | 0.8245 | 6.3601 | 0.5481 |
 
 
 Acknowledgements
