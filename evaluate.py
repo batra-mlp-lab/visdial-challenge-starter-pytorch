@@ -11,9 +11,10 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
-from encoders.lf import LateFusionEncoder
-from decoders.disc import DiscriminativeDecoder
-from utils.metrics import process_ranks
+from encoders import Encoder
+from decoders import Decoder
+from utils import process_ranks, compute_ranks_gt, compute_ranks_nogt
+
 
 parser = argparse.ArgumentParser()
 VisDialDataset.add_cmdline_args(parser)
@@ -86,7 +87,7 @@ dataloader = DataLoader(dataset,
                         collate_fn=dataset.collate_fn)
 
 # iterations per epoch
-setattr(args, 'iter_per_epoch', 
+setattr(args, 'iter_per_epoch',
     math.ceil(dataset.num_data_points[args.split] / args.batch_size))
 print("{} iter per epoch.".format(args.iter_per_epoch))
 
@@ -94,10 +95,10 @@ print("{} iter per epoch.".format(args.iter_per_epoch))
 # setup the model
 # ----------------------------------------------------------------------------
 
-encoder = LateFusionEncoder(model_args)
+encoder = Encoder(model_args)
 encoder.load_state_dict(components['encoder'])
 
-decoder = DiscriminativeDecoder(model_args, encoder)
+decoder = Decoder(model_args, encoder)
 decoder.load_state_dict(components['decoder'])
 print("Loaded model from {}".format(args.load_path))
 
@@ -126,11 +127,9 @@ if args.use_gt:
                     batch[key] = Variable(batch[key].cuda(), volatile=True)
 
         enc_out = encoder(batch)
-        scores = decoder(enc_out, batch).data
-        gt_pos = batch['ans_ind'].data.view(-1, 1)
-        gt_score = scores.gather(1, gt_pos)
-        ranks = scores.gt(gt_score.expand_as(scores))
-        all_ranks.append(ranks.sum(1) + 1)
+        dec_out = decoder(enc_out, batch)
+        ranks = compute_ranks_gt(dec_out.data, batch['ans_ind'].data)
+        all_ranks.append(ranks)
     all_ranks = torch.stack(all_ranks, 0)
     process_ranks(all_ranks)
     gc.collect()
@@ -147,15 +146,7 @@ else:
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
-        # sort in descending order - largest score gets highest rank
-        sorted_ranks, ranked_idx = dec_out.data.sort(1, descending=True)
-
-        # convert from ranked_idx to ranks
-        ranks = ranked_idx.clone().fill_(0)
-        for i in range(ranked_idx.size(0)):
-            for j in range(100):
-                ranks[i][ranked_idx[i][j]] = j
-        ranks = ranks + 1
+        ranks = compute_ranks_nogt(dec_out.data)
         ranks = ranks.view(-1, 10, 100)
 
         for i in range(len(batch['img_fnames'])):

@@ -125,10 +125,12 @@ The competition is only meant for discriminative models, so only discriminative 
 
 Training works with default arguments by:
 ```sh
-python train.py -num_epochs 20 -batch_size 16 -gpuid 0  # other args
+python train.py -encoder lf-ques-im-hist -decoder disc -gpuid 0  # other args
 ```
 
 The script has all the default arguments, so it works without specifying any arguments. Execute the script with `-h` to see a list of available arguments which can be changed as per need (such as learning rate, epochs, batch size, etc).
+
+To extend this starter code, add your own encoder/decoder modules into their respective decoders and put their choices in `__init__.py` of those directories, as well as their names in command line arguments of `train.py`.
 
 We have an `-overfit` flag, which can be useful for rapid execution during debugging. It takes a batch of 5 examples and overfits the model on them.
 

@@ -11,13 +11,19 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
-from encoders.lf import LateFusionEncoder
-from decoders.disc import DiscriminativeDecoder
+from encoders import Encoder, LateFusionEncoder
+from decoders import Decoder
 
 
 parser = argparse.ArgumentParser()
 VisDialDataset.add_cmdline_args(parser)
 LateFusionEncoder.add_cmdline_args(parser)
+
+parser.add_argument_group('Encoder Decoder choice arguments')
+parser.add_argument('-encoder', default='lf-ques-im-hist', choices=['lf-ques-im-hist'],
+                        help='Encoder to use for training')
+parser.add_argument('-decoder', default='disc', choices=['disc'],
+                        help='Decoder to use for training')
 
 parser.add_argument_group('Optimization related arguments')
 parser.add_argument('-num_epochs', default=20, type=int, help='Epochs')
@@ -104,8 +110,8 @@ print("{} iter per epoch.".format(args.iter_per_epoch))
 # setup the model
 # ----------------------------------------------------------------------------
 
-encoder = LateFusionEncoder(model_args)
-decoder = DiscriminativeDecoder(model_args, encoder)
+encoder = Encoder(model_args)
+decoder = Decoder(model_args, encoder)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),
                        lr=args.lr)
@@ -115,8 +121,8 @@ if args.load_path != '':
     encoder.load_state_dict(components['encoder'])
     decoder.load_state_dict(components['decoder'])
     print("Loaded model from {}".format(args.load_path))
-print("Encoder: {}".format('lf-ques-im-hist'))  # todo: support more encoders
-print("Decoder: {}".format('disc'))
+print("Encoder: {}".format(args.encoder))
+print("Decoder: {}".format(args.decoder))
 
 if args.gpuid >= 0:
     encoder = encoder.cuda()

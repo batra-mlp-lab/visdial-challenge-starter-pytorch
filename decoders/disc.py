@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from utils.dynamic_rnn import DynamicRNN
+from utils import DynamicRNN
 
 
 class DiscriminativeDecoder(nn.Module):

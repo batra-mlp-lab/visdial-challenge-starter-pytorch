@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from utils.dynamic_rnn import DynamicRNN
+from utils import DynamicRNN
 
 
 class LateFusionEncoder(nn.Module):

@@ -1,5 +1,12 @@
-from __future__ import division
 import torch
+
+
+def compute_ranks_gt(scores, ans_ind):
+        gt_pos = ans_ind.view(-1, 1)
+        gt_score = scores.gather(1, gt_pos)
+        ranks = scores.gt(gt_score.expand_as(scores))
+        return ranks.sum(1) + 1
+
 
 def process_ranks(ranks):
     num_ques = ranks.size(0) * ranks.size(1)
@@ -28,3 +35,16 @@ def process_ranks(ranks):
     print("\tr@10: {}".format(num_r10 / num_ques))
     print("\tmeanR: {}".format(torch.mean(ranks)))
     print("\tmeanRR: {}".format(torch.mean(ranks.reciprocal())))
+
+
+def compute_ranks_nogt(scores):
+    # sort in descending order - largest score gets highest rank
+    sorted_ranks, ranked_idx = scores.sort(1, descending=True)
+
+    # convert from ranked_idx to ranks
+    ranks = ranked_idx.clone().fill_(0)
+    for i in range(ranked_idx.size(0)):
+        for j in range(100):
+            ranks[i][ranked_idx[i][j]] = j
+    ranks = ranks + 1
+    return ranks
