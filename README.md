@@ -1,7 +1,7 @@
 Visual Dialog Challenge Starter Code
 ====================================
 
-PyTorch starter code for [Visual Dialog Challenge][1].
+PyTorch starter code for the [Visual Dialog Challenge][1].
 
   * [Setup and Dependencies](#setup-and-dependencies)
   * [Preprocessing VisDial](#preprocessing-visdial)
@@ -131,7 +131,7 @@ python train.py -encoder lf-ques-im-hist -decoder disc -gpuid 0  # other args
 
 The script has all the default arguments, so it works without specifying any arguments. Execute the script with `-h` to see a list of available arguments which can be changed as per need (such as learning rate, epochs, batch size, etc).
 
-To extend this starter code, add your own encoder/decoder modules into their respective directories and put their choices in command line arguments of `train.py`.
+To extend this starter code, add your own encoder/decoder modules into their respective directories and include their names as choices in command line arguments of `train.py`.
 
 We have an `-overfit` flag, which can be useful for rapid debugging. It takes a batch of 5 examples and overfits the model on them.
 
