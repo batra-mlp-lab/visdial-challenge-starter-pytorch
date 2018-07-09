@@ -1,11 +1,7 @@
 Visual Dialog Challenge Starter Code
 ====================================
 
-Pytorch starter code for [Visual Dialog Challenge][1].
-
-
-Table of Contents
-=================
+PyTorch starter code for [Visual Dialog Challenge][1].
 
   * [Setup and Dependencies](#setup-and-dependencies)
   * [Preprocessing VisDial](#preprocessing-visdial)
@@ -19,11 +15,11 @@ Table of Contents
 
 
 Setup and Dependencies
-======================
+----------------------
 
 Our code is implemented in PyTorch (v0.3.0 with CUDA). To setup, do the following:
 
-If you do not have any Anaconda or Miniconda distribution, head over to their [downloads site][2] before proceeding further.
+If you do not have any Anaconda or Miniconda distribution, head over to their [downloads' site][2] before proceeding further.
 
 Clone the repository and create an environment.
 
@@ -57,13 +53,13 @@ luarocks install cudnn
 luarocks install cunn
 ```
 
-Note that since Torch is in maintainance mode now, it requires CUDNN v5.1 or lower. Install it separately and set `$CUDNN_PATH` environment variable to the binary (shared object) file.
+**Note:** Since Torch is in maintenance mode now, it requires CUDNN v5.1 or lower. Install it separately and set `$CUDNN_PATH` environment variable to the binary (shared object) file.
 
 
 Download Preprocessed Data
-==========================
+--------------------------
 
-We provide the preprocessed VisDial v1.0 dataset (tokenized captions, questions, answers, image indices, vocabulary mappings and image features extracted by pretrained CNN). If you wish to preprocess data or extract your own features, skip this step.
+We provide preprocessed files for VisDial v1.0 (tokenized captions, questions, answers, image indices, vocabulary mappings and image features extracted by pretrained CNN). If you wish to preprocess data or extract your own features, skip this step.
 
 Extracted features for v1.0 train, val and test are available for download [here][7].
 
@@ -76,13 +72,17 @@ Extracted features for v1.0 train, val and test are available for download [here
 * `data_img_vgg16_relu7_trainval.h5`: VGG16 `relu7` image features for training on `train`+`val`
 * `data_img_vgg16_pool5_trainval.h5`: VGG16 `pool5` image features for training on `train`+`val`
 
+Download these files to `data` directory. If you are downloaded just one file each for `visdial_data*.h5`, `visdial_params*.json`, `data_img*.h5`, it would be convenient to rename them and remove everything represented by asterisk. These names are used in default arguments of train and evaluate scripts.
+
 
 Preprocessing VisDial
-=====================
+---------------------
 
-Download all the image files required for VisDial v1.0. In the root directory, there should be four subdirectories, named:
+Download all the images required for VisDial v1.0. Create an empty directory anywhere and place four subdirectories with the downloaded images, named:
   - [`train2014`][8] and [`val2014`][9] from COCO dataset, used by `train` split.
   - `VisualDialog_val2018` and `VisualDialog_test2018` - can be downloaded from [here][10].
+
+This shall be referred as the image root directory.
 
 ```sh
 cd data
@@ -94,7 +94,7 @@ This script will generate the files `data/visdial_data.h5` (contains tokenized c
 
 
 Extracting Image Features
-=========================
+-------------------------
 
 Since we don't finetune the CNN, training is significantly faster if image features are pre-extracted. Currently this repository provides support for extraction from VGG-16 and ResNets. We use image features from [VGG-16][11].
 
@@ -119,9 +119,9 @@ Running either of these should generate `data/data_img.h5` containing features f
 
 
 Training
-========
+--------
 
-The competition is only meant for discriminative models, so only discriminative decoder is supported here. For reference, we have Late Fusion Encoder from the Visual Dialog paper.
+This codebase supports discriminative decoding only; read more [here][16]. For reference, we have Late Fusion Encoder from the Visual Dialog paper.
 
 Training works with default arguments by:
 ```sh
@@ -130,13 +130,13 @@ python train.py -encoder lf-ques-im-hist -decoder disc -gpuid 0  # other args
 
 The script has all the default arguments, so it works without specifying any arguments. Execute the script with `-h` to see a list of available arguments which can be changed as per need (such as learning rate, epochs, batch size, etc).
 
-To extend this starter code, add your own encoder/decoder modules into their respective decoders and put their choices in `__init__.py` of those directories, as well as their names in command line arguments of `train.py`.
+To extend this starter code, add your own encoder/decoder modules into their respective directories and put their choices in `__init__.py`, as well as their names in command line arguments of `train.py`.
 
-We have an `-overfit` flag, which can be useful for rapid execution during debugging. It takes a batch of 5 examples and overfits the model on them.
+We have an `-overfit` flag, which can be useful for rapid debugging. It takes a batch of 5 examples and overfits the model on them.
 
 
 Evaluation
-==========
+----------
 
 Evaluation of a trained model checkpoint can be done as follows:
 
@@ -144,28 +144,44 @@ Evaluation of a trained model checkpoint can be done as follows:
 python evaluate.py -split val -load_path /path/to/pth/checkpoint -use_gt
 ```
 
-The `-use_gt` argument gives a signal to use the ground truth from split and hence, is necessary to calculate the evaluation metrics from [Visual Dialog paper][13] (Recall@ 1, 5, 10, Mean Rank, Mean Reciprocal Rank). Since the `test` split has no ground truth, `-split test` won't work here.
+To evaluate on metrics from the [Visual Dialog paper][13] (Mean reciprocal rank, R@{1, 5, 10}, Mean rank), use the `-use_gt` flag. Since the `test` split has no ground truth, `-split test` won't work here.
 
 **Note:** The metrics reported here would be the same as those reported through EvalAI by making a submission in `val` phase.
 
 
 Generate Submission
-===================
+-------------------
 
-To generate the submission, simply run the evaluation script with one of out trained model checkpoints. The argument `-use_gt` should **not** be used here, to generate ranks based on the score of decoder. 
+To save predictions in a format submittable to the evaluation server on EvalAI, run the evaluation script (without using the `-use_gt` flag).
 
-To generate a submission for `val` phase:
+To generate a submission file for `val` phase:
 ```sh
 python evaluate.py -split val -load_path /path/to/pth/checkpoint -save_ranks -save_path /path/to/submission/json
 ```
 
-To generate a submission for `test-std` or `test-challenge` phase, replace `split val` with `-split test`.
+To generate a submission for `test-std` or `test-challenge` phase, replace `-split val` with `-split test`.
+
+
+Pretrained Checkpoint
+---------------------
+
+Pretrained checkpoint of Late Fusion Encoder - Discriminative Decoder model is available [here][17].
+
+Performance on `v1.0` val (trained on `v1.0` train):
+```
+r@1: 0.4015
+r@5: 0.7147
+r@10: 0.8245
+meanR: 6.3601
+meanRR: 0.5481
+```
 
 
 Acknowledgements
-================
+----------------
 
-This starter code began as a fork of [batra-mlp-lab/visdial-rl][14]. We thank the developers for doing most of the heavy-lifting. The Lua-torch codebase of Visual Dialog, at [batra-mlp-lab/visdial][15] served as an important reference while developing this codebase. 
+* This starter code began as a fork of [batra-mlp-lab/visdial-rl][14]. We thank the developers for doing most of the heavy-lifting.
+* The Lua-torch codebase of Visual Dialog, at [batra-mlp-lab/visdial][15], served as an important reference while developing this codebase. 
 
 
 License
@@ -189,3 +205,5 @@ BSD
 [13]: https://arxiv.org/abs/1611.08669
 [14]: https://www.github.com/batra-mlp-lab/visdial-rl
 [15]: https://www.github.com/batra-mlp-lab/visdial
+[16]: https://visualdialog.org/challenge/2018#faq
+[17]: https://www.dropbox.com/s/sgojylygmz56cz7/lf-ques-im-hist-vgg16-train-2.pth
