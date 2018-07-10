@@ -29,7 +29,7 @@ parser.add_argument('-use_gt', action='store_true',
 parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
 parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
 parser.add_argument('-overfit', action='store_true',
-                        help='Use a batch of only 5 examples, useful got debugging')
+                        help='Use a batch of only 5 examples, useful for debugging')
 
 parser.add_argument_group('Submission related arguments')
 parser.add_argument('-save_ranks', action='store_true',
