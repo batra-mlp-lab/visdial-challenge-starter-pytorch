@@ -11,7 +11,7 @@ class DiscriminativeDecoder(nn.Module):
         # share word embedding
         self.word_embed = encoder.word_embed
         self.option_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, batch_first=True)
-        self.log_softmax = nn.LogSoftmax(dim=0)
+        self.log_softmax = nn.LogSoftmax(dim=1)
 
         # options are variable length padded sequences, use DynamicRNN
         self.option_rnn = DynamicRNN(self.option_rnn)
