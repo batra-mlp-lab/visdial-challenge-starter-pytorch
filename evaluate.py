@@ -121,10 +121,11 @@ if args.use_gt:
     # ------------------------------------------------------------------------
     all_ranks = []
     for i, batch in enumerate(tqdm(dataloader)):
-        if args.gpuid >= 0:
-            for key in batch:
-                if not isinstance(batch[key], list):
-                    batch[key] = Variable(batch[key].cuda(), volatile=True)
+        for key in batch:
+            if not isinstance(batch[key], list):
+                batch[key] = Variable(batch[key], volatile=True)
+                if args.gpuid >= 0:
+                    batch[key] = batch[key].cuda()
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
@@ -139,10 +140,11 @@ else:
     # ------------------------------------------------------------------------
     ranks_json = []
     for i, batch in enumerate(tqdm(dataloader)):
-        if args.gpuid >= 0:
-            for key in batch:
-                if not isinstance(batch[key], list):
-                    batch[key] = Variable(batch[key].cuda(), volatile=True)
+        for key in batch:
+            if not isinstance(batch[key], list):
+                batch[key] = Variable(batch[key], volatile=True)
+                if args.gpuid >= 0:
+                    batch[key] = batch[key].cuda()
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)

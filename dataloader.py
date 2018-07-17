@@ -192,6 +192,13 @@ class VisDialDataset(Dataset):
         if dtype != 'test':
             ans_ind = self.data[dtype + '_ans_ind'][idx]
             item['ans_ind'] = ans_ind.view(-1)
+
+        # convert zero length sequences to one length
+        # this is for handling empty rounds of v1.0 test, they will be dropped anyway
+        if dtype == 'test':
+            item['ques_len'][item['ques_len'] == 0] += 1
+            item['opt_len'][item['opt_len'] == 0] += 1
+            item['hist_len'][item['hist_len'] == 0] += 1
         return item
 
     #-------------------------------------------------------------------------

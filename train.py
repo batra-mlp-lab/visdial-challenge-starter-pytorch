@@ -146,10 +146,11 @@ for epoch in range(1, model_args.num_epochs + 1):
     for i, batch in enumerate(dataloader):
         optimizer.zero_grad()
 
-        if args.gpuid >= 0:
-            for key in batch:
-                if not isinstance(batch[key], list):
-                    batch[key] = Variable(batch[key].cuda())
+        for key in batch:
+            if not isinstance(batch[key], list):
+                batch[key] = Variable(batch[key])
+                if args.gpuid >= 0:
+                    batch[key] = batch[key].cuda()
 
         # --------------------------------------------------------------------
         # forward-backward pass and optimizer step
