@@ -1,19 +1,25 @@
 import torch
 
 
-def compute_ranks_gt(scores, ans_ind):
-        gt_pos = ans_ind.view(-1, 1)
-        gt_score = scores.gather(1, gt_pos)
-        ranks = scores.gt(gt_score.expand_as(scores))
-        return ranks.sum(1) + 1
+def get_gt_ranks(ranks, ans_ind):
+    ans_ind = ans_ind.view(-1)
+    num_opts = 100
+    ranks = ranks.view(-1, num_opts)
+    gt_ranks = torch.LongTensor(ans_ind.size(0))
+    for i in range(ans_ind.size(0)):
+        gt_binary = torch.zeros(num_opts)
+        gt_binary[ans_ind[i]] = 1
+        sorted_gt = gt_binary.index_select(0, ranks[i].sort()[1].cpu())
+        gt_rank = (sorted_gt == 1).nonzero() + 1
+        gt_ranks[i] = int(gt_rank)  # gt_rank is 1x1 LongTensor
+    return gt_ranks
 
 
 def process_ranks(ranks):
-    num_ques = ranks.size(0) * ranks.size(1)
+    num_ques = ranks.size(0)
     num_opts = 100
 
     # none of the values should be 0, there is gt in options
-    ranks = ranks.view(-1)
     if torch.sum(ranks.le(0)) > 0:
         num_zero = torch.sum(ranks.le(0))
         print("Warning: some of ranks are zero: {}".format(num_zero))
@@ -25,7 +31,7 @@ def process_ranks(ranks):
         print("Warning: some of ranks > 100: {}".format(num_ge))
         ranks = ranks[ranks.le(num_opts + 1)]
 
-    ranks = ranks.double()
+    ranks = ranks.float()
     num_r1 = float(torch.sum(torch.le(ranks, 1)))
     num_r5 = float(torch.sum(torch.le(ranks, 5)))
     num_r10 = float(torch.sum(torch.le(ranks, 10)))
@@ -37,7 +43,7 @@ def process_ranks(ranks):
     print("\tmeanRR: {}".format(torch.mean(ranks.reciprocal())))
 
 
-def compute_ranks_nogt(scores):
+def scores_to_ranks(scores):
     # sort in descending order - largest score gets highest rank
     sorted_ranks, ranked_idx = scores.sort(1, descending=True)
 
@@ -46,5 +52,5 @@ def compute_ranks_nogt(scores):
     for i in range(ranked_idx.size(0)):
         for j in range(100):
             ranks[i][ranked_idx[i][j]] = j
-    ranks = ranks + 1
+    ranks += 1
     return ranks

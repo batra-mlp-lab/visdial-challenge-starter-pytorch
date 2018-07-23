@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from dataloader import VisDialDataset
 from encoders import Encoder
 from decoders import Decoder
-from utils import process_ranks, compute_ranks_gt, compute_ranks_nogt
+from utils import process_ranks, scores_to_ranks, get_gt_ranks
 
 
 parser = argparse.ArgumentParser()
@@ -129,9 +129,10 @@ if args.use_gt:
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
-        ranks = compute_ranks_gt(dec_out.data, batch['ans_ind'].data)
-        all_ranks.append(ranks)
-    all_ranks = torch.stack(all_ranks, 0)
+        ranks = scores_to_ranks(dec_out.data)
+        gt_ranks = get_gt_ranks(ranks, batch['ans_ind'].data)
+        all_ranks.append(gt_ranks)
+    all_ranks = torch.cat(all_ranks, 0)
     process_ranks(all_ranks)
     gc.collect()
 else:
@@ -148,7 +149,7 @@ else:
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
-        ranks = compute_ranks_nogt(dec_out.data)
+        ranks = scores_to_ranks(dec_out.data)
         ranks = ranks.view(-1, 10, 100)
 
         for i in range(len(batch['img_fnames'])):

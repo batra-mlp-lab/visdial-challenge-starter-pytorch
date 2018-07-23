@@ -1,3 +1,2 @@
 from .dynamic_rnn import DynamicRNN
-from .eval_utils import process_ranks, compute_ranks_gt, compute_ranks_nogt
-
+from .eval_utils import process_ranks, scores_to_ranks, get_gt_ranks
