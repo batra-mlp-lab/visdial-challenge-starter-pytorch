@@ -3,15 +3,9 @@ import torch
 
 def get_gt_ranks(ranks, ans_ind):
     ans_ind = ans_ind.view(-1)
-    num_opts = 100
-    ranks = ranks.view(-1, num_opts)
     gt_ranks = torch.LongTensor(ans_ind.size(0))
     for i in range(ans_ind.size(0)):
-        gt_binary = torch.zeros(num_opts)
-        gt_binary[ans_ind[i]] = 1
-        sorted_gt = gt_binary.index_select(0, ranks[i].sort()[1].cpu())
-        gt_rank = (sorted_gt == 1).nonzero() + 1
-        gt_ranks[i] = int(gt_rank)  # gt_rank is 1x1 LongTensor
+        gt_ranks[i] = int(ranks[i, ans_ind[i]])
     return gt_ranks
 
 
