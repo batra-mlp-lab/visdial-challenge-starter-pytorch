@@ -6,7 +6,6 @@ import os
 
 import torch
 from torch import nn, optim
-from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
@@ -147,7 +146,6 @@ for epoch in range(1, model_args.num_epochs + 1):
 
         for key in batch:
             if not isinstance(batch[key], list):
-                batch[key] = Variable(batch[key])
                 batch[key] = batch[key].to(device)
 
         # --------------------------------------------------------------------
@@ -165,9 +163,9 @@ for epoch in range(1, model_args.num_epochs + 1):
         # update running loss and decay learning rates
         # --------------------------------------------------------------------
         if running_loss > 0.0:
-            running_loss = 0.95 * running_loss + 0.05 * cur_loss.data[0]
+            running_loss = 0.95 * running_loss + 0.05 * cur_loss.item()
         else:
-            running_loss = cur_loss.data[0]
+            running_loss = cur_loss.item()
 
         if optimizer.param_groups[0]['lr'] > args.min_lr:
             scheduler.step()

@@ -122,13 +122,13 @@ if args.use_gt:
     for i, batch in enumerate(tqdm(dataloader)):
         for key in batch:
             if not isinstance(batch[key], list):
-                batch[key] = Variable(batch[key], volatile=True)
                 batch[key] = batch[key].to(device)
 
-        enc_out = encoder(batch)
-        dec_out = decoder(enc_out, batch)
-        ranks = scores_to_ranks(dec_out.data)
-        gt_ranks = get_gt_ranks(ranks, batch['ans_ind'].data)
+        with torch.no_grad():
+            enc_out = encoder(batch)
+            dec_out = decoder(enc_out, batch)
+        ranks = scores_to_ranks(dec_out)
+        gt_ranks = get_gt_ranks(ranks, batch['ans_ind'])
         all_ranks.append(gt_ranks)
     all_ranks = torch.cat(all_ranks, 0)
     process_ranks(all_ranks)
@@ -141,12 +141,12 @@ else:
     for i, batch in enumerate(tqdm(dataloader)):
         for key in batch:
             if not isinstance(batch[key], list):
-                batch[key] = Variable(batch[key], volatile=True)
                 batch[key] = batch[key].to(device)
 
-        enc_out = encoder(batch)
-        dec_out = decoder(enc_out, batch)
-        ranks = scores_to_ranks(dec_out.data)
+        with torch.no_grad():
+            enc_out = encoder(batch)
+            dec_out = decoder(enc_out, batch)
+        ranks = scores_to_ranks(dec_out)
         ranks = ranks.view(-1, 10, 100)
 
         for i in range(len(batch['img_fnames'])):

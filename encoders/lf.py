@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from utils import DynamicRNN
 
@@ -44,10 +43,10 @@ class LateFusionEncoder(nn.Module):
         self.fusion = nn.Linear(fusion_size, args.rnn_hidden_size)
 
         if args.weight_init == 'xavier':
-            nn.init.xavier_uniform(self.fusion.weight.data)
+            nn.init.xavier_uniform_(self.fusion.weight)
         elif args.weight_init == 'kaiming':
-            nn.init.kaiming_uniform(self.fusion.weight.data)
-        nn.init.constant(self.fusion.bias.data, 0)
+            nn.init.kaiming_uniform_(self.fusion.weight)
+        nn.init.constant_(self.fusion.bias, 0)
 
     def forward(self, batch):
         img = batch['img_feat']
@@ -72,5 +71,5 @@ class LateFusionEncoder(nn.Module):
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
         fused_vector = self.dropout(fused_vector)
 
-        fused_embedding = F.tanh(self.fusion(fused_vector))
+        fused_embedding = torch.tanh(self.fusion(fused_vector))
         return fused_embedding
