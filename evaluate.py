@@ -51,12 +51,12 @@ if args.use_gt:
         args.save_ranks = False
 
 # seed for reproducibility
-torch.manual_seed(1234)
-
-# set device and default tensor type
+torch.manual_seed(0)
 if args.gpuid >= 0:
-    torch.cuda.manual_seed_all(1234)
-    torch.cuda.set_device(args.gpuid)
+    torch.cuda.manual_seed_all(0)
+    device = torch.device("cuda", args.gpuid)
+else:
+    device = torch.device("cpu")
 
 # ----------------------------------------------------------------------------
 # read saved model and args
@@ -102,9 +102,8 @@ decoder = Decoder(model_args, encoder)
 decoder.load_state_dict(components['decoder'])
 print("Loaded model from {}".format(args.load_path))
 
-if args.gpuid >= 0:
-    encoder = encoder.cuda()
-    decoder = decoder.cuda()
+encoder = encoder.to(device)
+decoder = decoder.to(device)
 
 # ----------------------------------------------------------------------------
 # evaluation
@@ -124,8 +123,7 @@ if args.use_gt:
         for key in batch:
             if not isinstance(batch[key], list):
                 batch[key] = Variable(batch[key], volatile=True)
-                if args.gpuid >= 0:
-                    batch[key] = batch[key].cuda()
+                batch[key] = batch[key].to(device)
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)
@@ -144,8 +142,7 @@ else:
         for key in batch:
             if not isinstance(batch[key], list):
                 batch[key] = Variable(batch[key], volatile=True)
-                if args.gpuid >= 0:
-                    batch[key] = batch[key].cuda()
+                batch[key] = batch[key].to(device)
 
         enc_out = encoder(batch)
         dec_out = decoder(enc_out, batch)

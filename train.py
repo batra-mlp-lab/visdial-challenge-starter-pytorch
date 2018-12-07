@@ -53,12 +53,12 @@ if args.save_path == 'checkpoints/':
     args.save_path += start_time
 
 # seed for reproducibility
-torch.manual_seed(1234)
-
-# set device and default tensor type
+torch.manual_seed(0)
 if args.gpuid >= 0:
-    torch.cuda.manual_seed_all(1234)
-    torch.cuda.set_device(args.gpuid)
+    torch.cuda.manual_seed_all(0)
+    device = torch.device("cuda", args.gpuid)
+else:
+    device = torch.device("cpu")
 
 # transfer all options to model
 model_args = args
@@ -124,10 +124,9 @@ if args.load_path != '':
 print("Encoder: {}".format(args.encoder))
 print("Decoder: {}".format(args.decoder))
 
-if args.gpuid >= 0:
-    encoder = encoder.cuda()
-    decoder = decoder.cuda()
-    criterion = criterion.cuda()
+encoder = encoder.to(device)
+decoder = decoder.to(device)
+criterion = criterion.to(device)
 
 # ----------------------------------------------------------------------------
 # training
@@ -149,8 +148,7 @@ for epoch in range(1, model_args.num_epochs + 1):
         for key in batch:
             if not isinstance(batch[key], list):
                 batch[key] = Variable(batch[key])
-                if args.gpuid >= 0:
-                    batch[key] = batch[key].cuda()
+                batch[key] = batch[key].to(device)
 
         # --------------------------------------------------------------------
         # forward-backward pass and optimizer step
