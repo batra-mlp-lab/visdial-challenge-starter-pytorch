@@ -9,9 +9,9 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
-from dataloader import VisDialDataset
-from encoders import Encoder, LateFusionEncoder
-from decoders import Decoder
+from visdialch.dataloader import VisDialDataset
+from visdialch.encoders import Encoder, LateFusionEncoder
+from visdialch.decoders import Decoder
 
 
 parser = argparse.ArgumentParser()

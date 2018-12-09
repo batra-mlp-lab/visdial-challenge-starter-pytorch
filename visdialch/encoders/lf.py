@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from utils import DynamicRNN
+from visdialch.utils import DynamicRNN
 
 
 class LateFusionEncoder(nn.Module):

@@ -10,10 +10,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from dataloader import VisDialDataset
-from encoders import Encoder
-from decoders import Decoder
-from utils import process_ranks, scores_to_ranks, get_gt_ranks
+from visdialch.dataloader import VisDialDataset
+from visdialch.encoders import Encoder
+from visdialch.decoders import Decoder
+from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 
 
 parser = argparse.ArgumentParser()
