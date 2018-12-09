@@ -30,12 +30,15 @@ class DiscriminativeDecoder(nn.Module):
         options = batch['opt']
         options_len = batch['opt_len']
         # word embed options
-        options = options.view(options.size(0) * options.size(1), options.size(2), -1)
-        options_len = options_len.view(options_len.size(0) * options_len.size(1), -1)
-        batch_size, num_options, max_opt_len = options.size()
-        options = options.contiguous().view(-1, num_options * max_opt_len)
+        batch_size, num_rounds, num_options, max_opt_len = options.size()
+        options = options.view(batch_size * num_rounds, num_options, max_opt_len)
+        options_len = options_len.view(batch_size * num_rounds, num_options)
+        options = options.view(batch_size * num_rounds, num_options * max_opt_len)
+
         options = self.word_embed(options)
-        options = options.view(batch_size, num_options, max_opt_len, -1)
+
+        options = options.view(batch_size * num_rounds, num_options, max_opt_len, -1)
+        enc_out = enc_out.view(batch_size * num_rounds, -1)
 
         # score each option
         scores = []

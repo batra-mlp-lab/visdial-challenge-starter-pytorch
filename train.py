@@ -6,7 +6,6 @@ import os
 
 import torch
 from torch import nn, optim
-from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 
@@ -35,8 +34,10 @@ parser.add_argument('-weight_init', default='xavier', choices=['xavier', 'kaimin
                         help='Weight initialization strategy')
 parser.add_argument('-overfit', action='store_true',
                         help='Overfit on 5 examples, meant for debugging')
-parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
-
+parser.add_argument('-gpuid', nargs='+', type=int, default=-1,
+                        help='GPU ids to use')
+parser.add_argument('-cpu_workers', type=int, default=8,
+                        help='Number of CPU workers for dataloading.')
 parser.add_argument_group('Checkpointing related arguments')
 parser.add_argument('-load_path', default='', help='Checkpoint to load path from')
 parser.add_argument('-save_path', default='checkpoints/', help='Path to save checkpoints')
@@ -53,13 +54,14 @@ if args.save_path == 'checkpoints/':
     args.save_path += start_time
 
 # seed for reproducibility
-torch.manual_seed(1234)
+torch.manual_seed(0)
 
-# set device and default tensor type
-if args.gpuid >= 0:
-    torch.cuda.manual_seed_all(1234)
-    torch.cuda.set_device(args.gpuid)
-
+if args.gpuid[0] >= 0:
+    torch.cuda.manual_seed_all(0)
+    device = torch.device("cuda", args.gpuid[0])
+else:
+    device = torch.device("cpu")
+print(f'Using {torch.cuda.device_count()} GPUs.')
 # transfer all options to model
 model_args = args
 
@@ -70,7 +72,7 @@ model_args = args
 if args.load_path != '':
     components = torch.load(args.load_path)
     model_args = components['model_args']
-    model_args.gpuid = args.gpuid
+    model_args.gpuid = args.gpuid[0]
     model_args.batch_size = args.batch_size
 
     # this is required by dataloader
@@ -90,7 +92,8 @@ dataset = VisDialDataset(args, ['train'])
 dataloader = DataLoader(dataset,
                         batch_size=args.batch_size,
                         shuffle=True,
-                        collate_fn=dataset.collate_fn)
+                        collate_fn=dataset.collate_fn,
+                        num_workers=args.cpu_workers)
 
 # ----------------------------------------------------------------------------
 # setting model args
@@ -124,10 +127,12 @@ if args.load_path != '':
 print("Encoder: {}".format(args.encoder))
 print("Decoder: {}".format(args.decoder))
 
-if args.gpuid >= 0:
-    encoder = encoder.cuda()
-    decoder = decoder.cuda()
-    criterion = criterion.cuda()
+encoder = encoder.to(device)
+decoder = decoder.to(device)
+criterion = criterion.to(device)
+
+encoder = nn.DataParallel(encoder, args.gpuid)
+decoder = nn.DataParallel(decoder, args.gpuid)
 
 # ----------------------------------------------------------------------------
 # training
@@ -148,9 +153,7 @@ for epoch in range(1, model_args.num_epochs + 1):
 
         for key in batch:
             if not isinstance(batch[key], list):
-                batch[key] = Variable(batch[key])
-                if args.gpuid >= 0:
-                    batch[key] = batch[key].cuda()
+                batch[key] = batch[key].to(device)
 
         # --------------------------------------------------------------------
         # forward-backward pass and optimizer step
@@ -167,9 +170,9 @@ for epoch in range(1, model_args.num_epochs + 1):
         # update running loss and decay learning rates
         # --------------------------------------------------------------------
         if running_loss > 0.0:
-            running_loss = 0.95 * running_loss + 0.05 * cur_loss.data[0]
+            running_loss = 0.95 * running_loss + 0.05 * cur_loss.item()
         else:
-            running_loss = cur_loss.data[0]
+            running_loss = cur_loss.item()
 
         if optimizer.param_groups[0]['lr'] > args.min_lr:
             scheduler.step()
@@ -189,15 +192,15 @@ for epoch in range(1, model_args.num_epochs + 1):
     # ------------------------------------------------------------------------
     if epoch % args.save_step == 0:
         torch.save({
-            'encoder': encoder.state_dict(),
-            'decoder': decoder.state_dict(),
+            'encoder': encoder.module.state_dict(),
+            'decoder': decoder.module.state_dict(),
             'optimizer': optimizer.state_dict(),
-            'model_args': encoder.args
+            'model_args': encoder.module.args
         }, os.path.join(args.save_path, 'model_epoch_{}.pth'.format(epoch)))
 
 torch.save({
-    'encoder': encoder.state_dict(),
-    'decoder': decoder.state_dict(),
+    'encoder': encoder.module.state_dict(),
+    'decoder': decoder.module.state_dict(),
     'optimizer': optimizer.state_dict(),
-    'model_args': encoder.args
+    'model_args': encoder.module.args
 }, os.path.join(args.save_path, 'model_final.pth'))

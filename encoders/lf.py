@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from utils import DynamicRNN
 
@@ -18,8 +17,6 @@ class LateFusionEncoder(nn.Module):
                                 help='Size of the multimodal embedding')
         parser.add_argument('-num_layers', default=2,
                                 help='Number of layers in LSTM')
-        parser.add_argument('-max_history_len', default=60,
-                                help='Size of the multimodal embedding')
         parser.add_argument('-dropout', default=0.5, help='Dropout')
         return parser
 
@@ -44,10 +41,10 @@ class LateFusionEncoder(nn.Module):
         self.fusion = nn.Linear(fusion_size, args.rnn_hidden_size)
 
         if args.weight_init == 'xavier':
-            nn.init.xavier_uniform(self.fusion.weight.data)
+            nn.init.xavier_uniform_(self.fusion.weight)
         elif args.weight_init == 'kaiming':
-            nn.init.kaiming_uniform(self.fusion.weight.data)
-        nn.init.constant(self.fusion.bias.data, 0)
+            nn.init.kaiming_uniform_(self.fusion.weight)
+        nn.init.constant_(self.fusion.bias, 0)
 
     def forward(self, batch):
         img = batch['img_feat']
@@ -60,6 +57,7 @@ class LateFusionEncoder(nn.Module):
         img = img.view(-1, self.args.img_feature_size)
 
         # embed questions
+        batch_size, num_rounds, _ = ques.size()
         ques = ques.view(-1, ques.size(2))
         ques_embed = self.word_embed(ques)
         ques_embed = self.ques_rnn(ques_embed, batch['ques_len'])
@@ -72,5 +70,6 @@ class LateFusionEncoder(nn.Module):
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
         fused_vector = self.dropout(fused_vector)
 
-        fused_embedding = F.tanh(self.fusion(fused_vector))
+        fused_embedding = torch.tanh(self.fusion(fused_vector))
+        fused_embedding = fused_embedding.view(batch_size, num_rounds, -1)
         return fused_embedding
