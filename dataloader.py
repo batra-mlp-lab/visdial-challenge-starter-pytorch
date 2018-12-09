@@ -102,8 +102,8 @@ class VisDialDataset(Dataset):
 
             # save image features
             self.data[dtype + '_img_fv'] = img_feats
-            img_fnames = getattr(self, 'unique_img_' + dtype)
-            self.data[dtype + '_img_fnames'] = img_fnames
+            img_ids = [int(fname[-16:-4]) for fname in getattr(self, 'unique_img_' + dtype)]
+            self.data[dtype + '_img_ids'] = img_ids
 
             # record some stats, will be transferred to encoder/decoder later
             # assume similar stats across multiple data subsets
@@ -117,7 +117,7 @@ class VisDialDataset(Dataset):
         # reduce amount of data for preprocessing in fast mode
         if args.overfit:
             self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
-            self.data[dtype + '_img_fnames'] = self.data[dtype + '_img_fnames'][:5]
+            self.data[dtype + '_img_ids'] = self.data[dtype + '_img_ids'][:5]
 
         self.num_data_points = {}
         for dtype in subsets:
@@ -165,7 +165,7 @@ class VisDialDataset(Dataset):
 
         # get image features
         item['img_feat'] = self.data[dtype + '_img_fv'][idx]
-        item['img_fnames'] = self.data[dtype + '_img_fnames'][idx]
+        item['img_ids'] = self.data[dtype + '_img_ids'][idx]
 
         # get question tokens
         item['ques'] = self.data[dtype + '_ques'][idx]
@@ -209,20 +209,22 @@ class VisDialDataset(Dataset):
         dtype = self._split
         merged_batch = {key: [d[key] for d in batch] for key in batch[0]}
         out = {}
+
+        # every key must be a tensor for torch.nn.DataParallel to work
         for key in merged_batch:
-            if key in {'index', 'num_rounds', 'img_fnames'}:
-                out[key] = merged_batch[key]
-            elif key in {'cap_len'}:
-                out[key] = torch.Tensor(merged_batch[key]).long()
+            if key in {'index', 'num_rounds', 'img_ids', 'cap_len'}:
+                # convert simple lists to tensors
+                out[key] = torch.tensor(merged_batch[key]).long()
             else:
+                # convert list of tensors to batch tensor
                 out[key] = torch.stack(merged_batch[key], 0)
 
-        # Dynamic shaping of padded batch
+        # dynamic shaping of padded batch
         out['hist'] = out['hist'][:, :, :torch.max(out['hist_len'])].contiguous()
         out['ques'] = out['ques'][:, :, :torch.max(out['ques_len'])].contiguous()
         out['opt'] = out['opt'][:, :, :, :torch.max(out['opt_len'])].contiguous()
 
-        batch_keys = ['img_fnames', 'num_rounds', 'img_feat', 'hist',
+        batch_keys = ['img_ids', 'num_rounds', 'img_feat', 'hist',
                       'hist_len', 'ques', 'ques_len', 'opt', 'opt_len']
         if dtype != 'test':
             batch_keys.append('ans_ind')

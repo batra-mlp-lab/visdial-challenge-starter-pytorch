@@ -7,7 +7,7 @@ import os
 from tqdm import tqdm
 
 import torch
-from torch.autograd import Variable
+from torch import nn
 from torch.utils.data import DataLoader
 
 from dataloader import VisDialDataset
@@ -27,7 +27,10 @@ parser.add_argument('-split', default='val', choices=['val', 'test'],
 parser.add_argument('-use_gt', action='store_true',
                         help='Whether to use ground truth for retrieving ranks')
 parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
-parser.add_argument('-gpuid', default=0, type=int, help='GPU id to use')
+parser.add_argument('-gpuid', nargs='+', type=int, default=-1,
+                        help='GPU ids to use')
+parser.add_argument('-cpu_workers', type=int, default=8,
+                        help='Number of CPU workers for dataloading.')
 parser.add_argument('-overfit', action='store_true',
                         help='Use a batch of only 5 examples, useful for debugging')
 
@@ -52,11 +55,12 @@ if args.use_gt:
 
 # seed for reproducibility
 torch.manual_seed(0)
-if args.gpuid >= 0:
+if args.gpuid[0] >= 0:
     torch.cuda.manual_seed_all(0)
-    device = torch.device("cuda", args.gpuid)
+    device = torch.device("cuda", args.gpuid[0])
 else:
     device = torch.device("cpu")
+print(f'Using {torch.cuda.device_count()} GPUs.')
 
 # ----------------------------------------------------------------------------
 # read saved model and args
@@ -64,7 +68,7 @@ else:
 
 components = torch.load(args.load_path)
 model_args = components['model_args']
-model_args.gpuid = args.gpuid
+model_args.gpuid = args.gpuid[0]
 model_args.batch_size = args.batch_size
 
 # this is required by dataloader
@@ -100,10 +104,14 @@ encoder.load_state_dict(components['encoder'])
 
 decoder = Decoder(model_args, encoder)
 decoder.load_state_dict(components['decoder'])
-print("Loaded model from {}".format(args.load_path))
 
 encoder = encoder.to(device)
 decoder = decoder.to(device)
+
+encoder = nn.DataParallel(encoder, args.gpuid)
+decoder = nn.DataParallel(decoder, args.gpuid)
+
+print("Loaded model from {}".format(args.load_path))
 
 # ----------------------------------------------------------------------------
 # evaluation
@@ -149,18 +157,18 @@ else:
         ranks = scores_to_ranks(dec_out)
         ranks = ranks.view(-1, 10, 100)
 
-        for i in range(len(batch['img_fnames'])):
+        for i in range(len(batch['img_ids'])):
             # cast into types explicitly to ensure no errors in schema
             if args.split == 'test':
                 ranks_json.append({
-                    'image_id': int(batch['img_fnames'][i][-16:-4]),
+                    'image_id': batch['img_ids'][i].item(),
                     'round_id': int(batch['num_rounds'][i]),
                     'ranks': list(ranks[i][batch['num_rounds'][i] - 1])
                 })
             else:
                 for j in range(batch['num_rounds'][i]):
                     ranks_json.append({
-                        'image_id': int(batch['img_fnames'][i][-16:-4]),
+                        'image_id': batch['img_ids'][i].item(),
                         'round_id': int(j + 1),
                         'ranks': list(ranks[i][j])
                     })
