@@ -16,7 +16,7 @@ class LateFusionEncoder(nn.Module):
                                 config["lstm_hidden_size"],
                                 config["lstm_num_layers"],
                                 batch_first=True,
-                                dropout=confg["dropout"])
+                                dropout=config["dropout"])
         self.ques_rnn = nn.LSTM(config["word_embedding_size"],
                                 config["lstm_hidden_size"],
                                 config["lstm_num_layers"],
@@ -31,11 +31,11 @@ class LateFusionEncoder(nn.Module):
 
         # fusion layer
         fusion_size = config["img_feature_size"] + config["lstm_hidden_size"] * 2
-        self.fusion = nn.Linear(fusion_size, config["rnn_hidden_size"])
+        self.fusion = nn.Linear(fusion_size, config["lstm_hidden_size"])
 
-        if args.weight_init == 'xavier':
+        if config["weight_init"] == "xavier":
             nn.init.xavier_uniform_(self.fusion.weight)
-        elif args.weight_init == 'kaiming':
+        elif config["weight_init"] == "kaiming":
             nn.init.kaiming_uniform_(self.fusion.weight)
         nn.init.constant_(self.fusion.bias, 0)
 
@@ -48,8 +48,8 @@ class LateFusionEncoder(nn.Module):
 
         # repeat image feature vectors to be provided for every round
         img = img.view(batch_size, 1, self.config["img_feature_size"])
-                 .repeat(1, num_rounds, 1)
-                 .view(batch_size * num_rounds,
+        img = img.repeat(1, num_rounds, 1)
+        img = img.view(batch_size * num_rounds,
                        self.config["img_feature_size"])
 
         # embed questions

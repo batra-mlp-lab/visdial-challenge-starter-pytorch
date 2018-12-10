@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 
 
 class VisDialDataset(Dataset):
-    def __init__(self, config, subsets):
+    def __init__(self, config, subsets, overfit=False):
         """Initialize the dataset with splits given by 'subsets', where
         subsets is taken from ['train', 'val', 'test']
         """
@@ -122,6 +122,11 @@ class VisDialDataset(Dataset):
             self._split = 'train'
         else:
             self._split = subsets[0]
+
+        # reduce amount of data for preprocessing in fast mode
+        if overfit:
+            self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
+            self.data[dtype + '_img_fnames'] = self.data[dtype + '_img_fnames'][:5]
 
     @property
     def split(self):

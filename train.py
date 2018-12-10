@@ -1,12 +1,13 @@
 import argparse
 from datetime import datetime
 import os
+import shutil
 
-import pprint
 import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
+import yaml
 
 from visdialch.dataloader import VisDialDataset
 from visdialch.encoders import Encoder
@@ -41,7 +42,7 @@ args = parser.parse_args()
 
 # keys: {"dataset", "model", "training"}
 config = yaml.load(open(args.config_yml))
-pprint.format(config)
+print(yaml.dump(config, default_flow_style=False))
 
 # for reproducibility - refer https://pytorch.org/docs/stable/notes/randomness.html
 torch.manual_seed(0)
@@ -50,7 +51,7 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
 # set CPU/GPU device for execution
-if args.gpu_ids[0] > 0:
+if args.gpu_ids[0] >= 0:
     device = torch.device("cuda", args.gpu_ids[0])
 else:
     device = torch.device("cpu")
@@ -60,7 +61,7 @@ else:
 # loading dataset wrapping with a dataloader
 # ----------------------------------------------------------------------------
 
-dataset = VisDialDataset(config["dataset"], ["train"])
+dataset = VisDialDataset(config["dataset"], ["train"], overfit=args.overfit)
 dataloader = DataLoader(dataset,
                         batch_size=config["training"]["batch_size"],
                         shuffle=False,
@@ -77,7 +78,10 @@ for key in {"vocab_size", "max_ques_count"}:
 # ----------------------------------------------------------------------------
 
 encoder = Encoder(config["model"])
-decoder = Decoder(config["model"], encoder)
+decoder = Decoder(config["model"])
+
+# share word embedding between encoder and decoder
+decoder.word_embed = encoder.word_embed
 
 # load parameters from a checkpoint if specified
 if args.load_path != "":
@@ -93,7 +97,7 @@ optimizer = optim.Adam(list(encoder.parameters()) + list(decoder.parameters()),
                        lr=config["training"]["initial_lr"])
 scheduler = lr_scheduler.StepLR(optimizer,
                                 step_size=1,
-                                gamma=config["lr_decay_rate"])
+                                gamma=config["training"]["lr_decay_rate"])
 
 # transfer to assigned device for execution
 encoder = encoder.to(device)
@@ -101,8 +105,8 @@ decoder = decoder.to(device)
 criterion = criterion.to(device)
 
 # wrap around DataParallel to support multi-GPU execution
-encoder = nn.DataParallel(encoder, args.gpu_ids[0])
-decoder = nn.DataParallel(decoder, args.gpu_ids[0])
+encoder = nn.DataParallel(encoder, args.gpu_ids)
+decoder = nn.DataParallel(decoder, args.gpu_ids)
 
 print("Encoder: {}".format(config["model"]["encoder"]))
 print("Decoder: {}".format(config["model"]["decoder"]))
@@ -139,7 +143,7 @@ print("{} iter per epoch.".format(ipe))
 encoder.train()
 decoder.train()
 running_loss = 0.0
-for epoch in range(start_epoch, config["num_epochs"] + 1):
+for epoch in range(start_epoch, config["training"]["num_epochs"] + 1):
     for i, batch in enumerate(dataloader):
         optimizer.zero_grad()
 

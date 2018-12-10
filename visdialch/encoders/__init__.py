@@ -5,5 +5,4 @@ def Encoder(model_config):
     name_enc_map = {
         'lf': LateFusionEncoder
     }
-    return name_enc_map[model_config["encoder"](model_config)
-
+    return name_enc_map[model_config["encoder"]](model_config)
