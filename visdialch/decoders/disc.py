@@ -1,16 +1,20 @@
 import torch
-import torch.nn as nn
+from torch import nn
 
 from visdialch.utils import DynamicRNN
 
 
 class DiscriminativeDecoder(nn.Module):
-    def __init__(self, args, encoder):
+    def __init__(self, config):
         super().__init__()
-        self.args = args
-        # share word embedding
-        self.word_embed = encoder.word_embed
-        self.option_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, batch_first=True)
+        self.config = config
+
+        self.word_embed = nn.Embedding(config["vocab_size"],
+                                       config["word_embedding_size"],
+                                       padding_idx=0)
+        self.option_rnn = nn.LSTM(config["word_embedding_size"],
+                                  config["lstm_hidden_size"],
+                                  batch_first=True)
         self.log_softmax = nn.LogSoftmax(dim=1)
 
         # options are variable length padded sequences, use DynamicRNN
@@ -24,19 +28,16 @@ class DiscriminativeDecoder(nn.Module):
         ---------
         enc_out : torch.autograd.Variable
             Output from the encoder through its forward pass. (b, rnn_hidden_size)
-        options : torch.LongTensor
-            Candidate answer option sequences. (b, num_options, max_len + 1) 
         """
         options = batch['opt']
         options_len = batch['opt_len']
+
         # word embed options
         batch_size, num_rounds, num_options, max_opt_len = options.size()
-        options = options.view(batch_size * num_rounds, num_options, max_opt_len)
-        options_len = options_len.view(batch_size * num_rounds, num_options)
         options = options.view(batch_size * num_rounds, num_options * max_opt_len)
+        options_len = options_len.view(batch_size * num_rounds, num_options)
 
         options = self.word_embed(options)
-
         options = options.view(batch_size * num_rounds, num_options, max_opt_len, -1)
         enc_out = enc_out.view(batch_size * num_rounds, -1)
 
