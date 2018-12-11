@@ -1,0 +1,33 @@
+# Dataset reader arguments
+dataset:
+  img_features_h5: 'data/data_img_vgg16_fc7.h5'
+  visdial_data_h5: 'data/visdial_data.h5'
+  visdial_params_json: 'data/visdial_params.json'
+  img_norm: 1
+  concat_history: True
+
+
+# Model related arguments
+model:
+  encoder: 'lf'
+  decoder: 'disc'
+
+  img_feature_size: 4096
+  word_embedding_size: 300
+  lstm_hidden_size: 512
+  lstm_num_layers: 2
+  dropout: 0.5
+  weight_init: 'kaiming'
+
+
+# Optimization related arguments
+training:
+  batch_size: 20
+  num_epochs: 20
+  initial_lr: 0.001
+  lr_decay_rate: 0.9997592083
+  minimum_lr: 0.00005
+
+evaluation:
+  batch_size: 20
+

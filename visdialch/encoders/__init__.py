@@ -1,9 +1,8 @@
 from .lf import LateFusionEncoder
 
 
-def Encoder(model_args):
+def Encoder(model_config):
     name_enc_map = {
-        'lf-ques-im-hist': LateFusionEncoder
+        'lf': LateFusionEncoder
     }
-    return name_enc_map[model_args.encoder](model_args)
-
+    return name_enc_map[model_config["encoder"]](model_config)

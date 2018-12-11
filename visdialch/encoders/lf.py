@@ -5,31 +5,24 @@ from visdialch.utils import DynamicRNN
 
 
 class LateFusionEncoder(nn.Module):
-
-    @staticmethod
-    def add_cmdline_args(parser):
-        parser.add_argument_group('Encoder specific arguments')
-        parser.add_argument('-img_feature_size', default=4096,
-                                help='Channel size of image feature')
-        parser.add_argument('-embed_size', default=300,
-                                help='Size of the input word embedding')
-        parser.add_argument('-rnn_hidden_size', default=512,
-                                help='Size of the multimodal embedding')
-        parser.add_argument('-num_layers', default=2,
-                                help='Number of layers in LSTM')
-        parser.add_argument('-dropout', default=0.5, help='Dropout')
-        return parser
-
-    def __init__(self, args):
+    def __init__(self, config):
         super().__init__()
-        self.args = args
+        self.config = config
 
-        self.word_embed = nn.Embedding(args.vocab_size, args.embed_size, padding_idx=0)
-        self.hist_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, args.num_layers,
-                                batch_first=True, dropout=args.dropout)
-        self.ques_rnn = nn.LSTM(args.embed_size, args.rnn_hidden_size, args.num_layers,
-                                batch_first=True, dropout=args.dropout)
-        self.dropout = nn.Dropout(p=args.dropout)
+        self.word_embed = nn.Embedding(config["vocab_size"],
+                                       config["word_embedding_size"],
+                                       padding_idx=0)
+        self.hist_rnn = nn.LSTM(config["word_embedding_size"],
+                                config["lstm_hidden_size"],
+                                config["lstm_num_layers"],
+                                batch_first=True,
+                                dropout=config["dropout"])
+        self.ques_rnn = nn.LSTM(config["word_embedding_size"],
+                                config["lstm_hidden_size"],
+                                config["lstm_num_layers"],
+                                batch_first=True,
+                                dropout=config["dropout"])
+        self.dropout = nn.Dropout(p=config["dropout"])
 
         # questions and history are right padded sequences of variable length
         # use the DynamicRNN utility module to handle them properly
@@ -37,12 +30,12 @@ class LateFusionEncoder(nn.Module):
         self.ques_rnn = DynamicRNN(self.ques_rnn)
 
         # fusion layer
-        fusion_size = args.img_feature_size + args.rnn_hidden_size * 2
-        self.fusion = nn.Linear(fusion_size, args.rnn_hidden_size)
+        fusion_size = config["img_feature_size"] + config["lstm_hidden_size"] * 2
+        self.fusion = nn.Linear(fusion_size, config["lstm_hidden_size"])
 
-        if args.weight_init == 'xavier':
+        if config["weight_init"] == "xavier":
             nn.init.xavier_uniform_(self.fusion.weight)
-        elif args.weight_init == 'kaiming':
+        elif config["weight_init"] == "kaiming":
             nn.init.kaiming_uniform_(self.fusion.weight)
         nn.init.constant_(self.fusion.bias, 0)
 
@@ -51,13 +44,15 @@ class LateFusionEncoder(nn.Module):
         ques = batch['ques']
         hist = batch['hist']
 
+        batch_size, num_rounds, _ = ques.size()
+
         # repeat image feature vectors to be provided for every round
-        img = img.view(-1, 1, self.args.img_feature_size)
-        img = img.repeat(1, self.args.max_ques_count, 1)
-        img = img.view(-1, self.args.img_feature_size)
+        img = img.view(batch_size, 1, self.config["img_feature_size"])
+        img = img.repeat(1, num_rounds, 1)
+        img = img.view(batch_size * num_rounds,
+                       self.config["img_feature_size"])
 
         # embed questions
-        batch_size, num_rounds, _ = ques.size()
         ques = ques.view(-1, ques.size(2))
         ques_embed = self.word_embed(ques)
         ques_embed = self.ques_rnn(ques_embed, batch['ques_len'])

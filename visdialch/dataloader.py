@@ -12,45 +12,31 @@ from torch.utils.data import Dataset
 
 
 class VisDialDataset(Dataset):
-
-    @staticmethod
-    def add_cmdline_args(parser):
-        parser.add_argument_group('Dataloader specific arguments')
-        parser.add_argument('-input_img', default='data/data_img.h5',
-                                help='HDF5 file with image features')
-        parser.add_argument('-input_ques', default='data/visdial_data.h5',
-                                help='HDF5 file with preprocessed questions')
-        parser.add_argument('-input_json', default='data/visdial_params.json',
-                                help='JSON file with image paths and vocab')
-        parser.add_argument('-img_norm', default=1, choices=[1, 0],
-                                help='normalize the image feature. 1=yes, 0=no')
-        return parser
-
-    def __init__(self, args, subsets):
+    def __init__(self, config, subsets, overfit=False):
         """Initialize the dataset with splits given by 'subsets', where
         subsets is taken from ['train', 'val', 'test']
         """
         super().__init__()
-        self.args = args
+        self.config = config
         self.subsets = tuple(subsets)
 
-        print("Dataloader loading json file: {}".format(args.input_json))
-        with open(args.input_json, 'r') as info_file:
+        print("Dataloader loading json file: {}".format(config['visdial_params_json']))
+        with open(config['visdial_params_json'], 'r') as info_file:
             info = json.load(info_file)
             # possible keys: {'ind2word', 'word2ind', 'unique_img_(split)'}
             for key, value in iteritems(info):
                 setattr(self, key, value)
 
-        # add <START> and <END> to vocabulary
+        # add <S> and </S> to vocabulary
         word_count = len(self.word2ind)
-        self.word2ind['<START>'] = word_count + 1
-        self.word2ind['<END>'] = word_count + 2
-        self.start_token = self.word2ind['<START>']
-        self.end_token = self.word2ind['<END>']
+        self.word2ind['<S>'] = word_count + 1
+        self.word2ind['</S>'] = word_count + 2
+        self.start_token = self.word2ind['<S>']
+        self.end_token = self.word2ind['</S>']
 
-        # padding + <START> + <END> token
+        # padding + <S> + </S> token
         self.vocab_size = word_count + 3
-        print("Vocab size with <START>, <END>: {}".format(self.vocab_size))
+        print("Vocab size with <S>, </S>: {}".format(self.vocab_size))
 
         # construct reverse of word2ind after adding tokens
         self.ind2word = {
@@ -58,11 +44,11 @@ class VisDialDataset(Dataset):
             for word, ind in iteritems(self.word2ind)
         }
 
-        print("Dataloader loading h5 file: {}".format(args.input_ques))
-        ques_file = h5py.File(args.input_ques, 'r')
+        print("Dataloader loading h5 file: {}".format(config['visdial_data_h5']))
+        ques_file = h5py.File(config['visdial_data_h5'], 'r')
 
-        print("Dataloader loading h5 file: {}".format(args.input_img))
-        img_file = h5py.File(args.input_img, 'r')
+        print("Dataloader loading h5 file: {}".format(config['img_features_h5']))
+        img_file = h5py.File(config['img_features_h5'], 'r')
 
         # load all data mats from ques_file into this
         self.data = {}
@@ -96,7 +82,7 @@ class VisDialDataset(Dataset):
             print("Reading image features...")
             img_feats = torch.from_numpy(np.array(img_file['images_' + dtype]))
 
-            if args.img_norm:
+            if config['img_norm']:
                 print("Normalizing image features...")
                 img_feats = F.normalize(img_feats, dim=1, p=2)
 
@@ -115,7 +101,7 @@ class VisDialDataset(Dataset):
             self.max_ans_len = self.data[dtype + '_ans'].size(2)
 
         # reduce amount of data for preprocessing in fast mode
-        if args.overfit:
+        if overfit:
             self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
             self.data[dtype + '_img_ids'] = self.data[dtype + '_img_ids'][:5]
 
@@ -247,7 +233,7 @@ class VisDialDataset(Dataset):
         ans_len = self.data[dtype + '_ans_len']
         num_convs, num_rounds, max_ans_len = answers.size()
 
-        if self.args.concat_history:
+        if self.config['concat_history']:
             self.max_hist_len = min(num_rounds * (max_ques_len + max_ans_len), 300)
             history = torch.zeros(num_convs, num_rounds, self.max_hist_len).long()
         else:
@@ -267,9 +253,9 @@ class VisDialDataset(Dataset):
                     qlen = ques_len[th_id][round_id - 1]
                     alen = ans_len[th_id][round_id - 1]
                     # if concat_history, string together all previous question-answer pairs
-                    if self.args.concat_history:
+                    if self.config['concat_history']:
                         history[th_id][round_id][:hlen] = history[th_id][round_id - 1][:hlen]
-                        history[th_id][round_id][hlen] = self.word2ind['<END>']
+                        history[th_id][round_id][hlen] = self.word2ind['</S>']
                         if qlen > 0:
                             history[th_id][round_id][hlen + 1:hlen + qlen + 1] \
                                 = questions[th_id][round_id - 1][:qlen]
