@@ -1,14 +1,13 @@
 import argparse
-import datetime
-import gc
+from datetime import datetime
 import json
-import math
 import os
-from tqdm import tqdm
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+import yaml
 
 from visdialch.dataloader import VisDialDataset
 from visdialch.encoders import Encoder
@@ -17,108 +16,106 @@ from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 
 
 parser = argparse.ArgumentParser()
-VisDialDataset.add_cmdline_args(parser)
+parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
+                        help="Path to a config file listing reader, model and "
+                             "optimization parameters.")
 
-parser.add_argument_group('Evaluation related arguments')
-parser.add_argument('-load_path', default='checkpoints/model.pth',
-                        help='Checkpoint to load path from')
-parser.add_argument('-split', default='val', choices=['val', 'test'],
-                        help='Split to evaluate on')
-parser.add_argument('-use_gt', action='store_true',
-                        help='Whether to use ground truth for retrieving ranks')
-parser.add_argument('-batch_size', default=12, type=int, help='Batch size')
-parser.add_argument('-gpuid', nargs='+', type=int, default=-1,
-                        help='GPU ids to use')
-parser.add_argument('-cpu_workers', type=int, default=8,
-                        help='Number of CPU workers for dataloading.')
-parser.add_argument('-overfit', action='store_true',
-                        help='Use a batch of only 5 examples, useful for debugging')
+parser.add_argument_group("Evaluation related arguments")
+parser.add_argument("--load-path", default="checkpoints/model.pth",
+                        help="Path to load pretrained checkpoint from.")
+parser.add_argument("--split", default="val", choices=["val", "test"],
+                        help="Split to evaluate on")
+parser.add_argument("--use-gt", action="store_true",
+                        help="Whether to use ground truth for retrieving ranks")
 
-parser.add_argument_group('Submission related arguments')
-parser.add_argument('-save_ranks', action='store_true',
-                        help='Whether to save retrieved ranks')
-parser.add_argument('-save_path', default='logs/ranks.json',
-                        help='Path of json file to save ranks')
+parser.add_argument_group("Arguments independent of experiment reproducibility")
+parser.add_argument("--gpu-ids", nargs="+", type=int, default=-1,
+                        help="List of ids of GPUs to use.")
+parser.add_argument("--cpu-workers", type=int, default=4,
+                        help="Number of CPU workers for reading data.")
+parser.add_argument("--overfit", action="store_true",
+                        help="Overfit model on 5 examples, meant for debugging.")
+
+parser.add_argument_group("Submission related arguments")
+parser.add_argument("--save-ranks-path", default="logs/ranks.json",
+                        help="Path (json) to save ranks, works only when use_gt=false.")
 
 # ----------------------------------------------------------------------------
-# input arguments and options
+# input arguments and config
 # ----------------------------------------------------------------------------
 
 args = parser.parse_args()
-if args.use_gt:
-    if args.split == 'test':
-        print("Warning: No ground truth for test split, changing use_gt to False.")
-        args.use_gt = False
-    elif args.split == 'val' and args.save_ranks:
-        print("Warning: Cannot generate submission json if use_gt is True.")
-        args.save_ranks = False
+if args.use_gt and args.split == "test":
+    print("Warning: No ground truth for test split, changing use_gt to False.")
+    args.use_gt = False
 
-# seed for reproducibility
+# keys: {"dataset", "model", "training", "evaluation"}
+config = yaml.load(open(args.config_yml))
+
+# print config and args
+print(yaml.dump(config, default_flow_style=False))
+for arg in vars(args):
+    print("{:<20}: {}".format(arg, getattr(args, arg)))
+
+# for reproducibility - refer https://pytorch.org/docs/stable/notes/randomness.html
 torch.manual_seed(0)
-if args.gpuid[0] >= 0:
-    torch.cuda.manual_seed_all(0)
-    device = torch.device("cuda", args.gpuid[0])
+torch.cuda.manual_seed_all(0)
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+
+# set CPU/GPU device for execution
+if args.gpu_ids[0] >= 0:
+    device = torch.device("cuda", args.gpu_ids[0])
 else:
     device = torch.device("cpu")
-print(f'Using {torch.cuda.device_count()} GPUs.')
 
-# ----------------------------------------------------------------------------
-# read saved model and args
-# ----------------------------------------------------------------------------
-
-components = torch.load(args.load_path)
-model_args = components['model_args']
-model_args.gpuid = args.gpuid[0]
-model_args.batch_size = args.batch_size
-
-# this is required by dataloader
-args.img_norm = model_args.img_norm
-
-# set this because only late fusion encoder is supported yet
-args.concat_history = True
-
-for arg in vars(args):
-    print('{:<20}: {}'.format(arg, getattr(args, arg)))
 
 # ----------------------------------------------------------------------------
 # loading dataset wrapping with a dataloader
 # ----------------------------------------------------------------------------
 
-dataset = VisDialDataset(args, [args.split])
+dataset = VisDialDataset(config["dataset"], [args.split], overfit=args.overfit)
 dataloader = DataLoader(dataset,
-                        batch_size=args.batch_size,
+                        batch_size=config["evaluation"]["batch_size"],
                         shuffle=False,
-                        collate_fn=dataset.collate_fn)
+                        collate_fn=dataset.collate_fn,
+                        num_workers=args.cpu_workers)
 
-# iterations per epoch
-setattr(args, 'iter_per_epoch',
-    math.ceil(dataset.num_data_points[args.split] / args.batch_size))
-print("{} iter per epoch.".format(args.iter_per_epoch))
+# transfer some attributes from dataset to model args
+for key in {"vocab_size", "max_ques_count"}:
+    config["model"][key] = getattr(dataset, key)
+
 
 # ----------------------------------------------------------------------------
 # setup the model
 # ----------------------------------------------------------------------------
 
-encoder = Encoder(model_args)
-encoder.load_state_dict(components['encoder'])
+components = torch.load(args.load_path)
 
-decoder = Decoder(model_args, encoder)
-decoder.load_state_dict(components['decoder'])
+encoder = Encoder(config["model"])
+decoder = Decoder(config["model"])
+encoder.load_state_dict(components["encoder"])
+decoder.load_state_dict(components["decoder"])
 
+# transfer to assigned device for execution
 encoder = encoder.to(device)
 decoder = decoder.to(device)
 
-encoder = nn.DataParallel(encoder, args.gpuid)
-decoder = nn.DataParallel(decoder, args.gpuid)
+# wrap around DataParallel to support multi-GPU execution
+encoder = nn.DataParallel(encoder, args.gpu_ids)
+decoder = nn.DataParallel(decoder, args.gpu_ids)
 
 print("Loaded model from {}".format(args.load_path))
+print("Encoder: {}".format(config["model"]["encoder"]))
+print("Decoder: {}".format(config["model"]["decoder"]))
+
 
 # ----------------------------------------------------------------------------
 # evaluation
 # ----------------------------------------------------------------------------
 
 print("Evaluation start time: {}".format(
-    datetime.datetime.strftime(datetime.datetime.utcnow(), '%d-%b-%Y-%H:%M:%S')))
+    datetime.strftime(datetime.now(), "%d-%b-%Y-%H:%M:%S")))
 encoder.eval()
 decoder.eval()
 
@@ -136,11 +133,10 @@ if args.use_gt:
             enc_out = encoder(batch)
             dec_out = decoder(enc_out, batch)
         ranks = scores_to_ranks(dec_out)
-        gt_ranks = get_gt_ranks(ranks, batch['ans_ind'])
+        gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
         all_ranks.append(gt_ranks)
     all_ranks = torch.cat(all_ranks, 0)
     process_ranks(all_ranks)
-    gc.collect()
 else:
     # ------------------------------------------------------------------------
     # prepare json for submission
@@ -157,24 +153,22 @@ else:
         ranks = scores_to_ranks(dec_out)
         ranks = ranks.view(-1, 10, 100)
 
-        for i in range(len(batch['img_ids'])):
+        for i in range(len(batch["img_ids"])):
             # cast into types explicitly to ensure no errors in schema
-            if args.split == 'test':
+            if args.split == "test":
                 ranks_json.append({
-                    'image_id': batch['img_ids'][i].item(),
-                    'round_id': int(batch['num_rounds'][i]),
-                    'ranks': list(ranks[i][batch['num_rounds'][i] - 1])
+                    "image_id": batch["img_ids"][i].item(),
+                    "round_id": int(batch["num_rounds"][i]),
+                    "ranks": list(ranks[i][batch["num_rounds"][i] - 1])
                 })
             else:
-                for j in range(batch['num_rounds'][i]):
+                for j in range(batch["num_rounds"][i]):
                     ranks_json.append({
-                        'image_id': batch['img_ids'][i].item(),
-                        'round_id': int(j + 1),
-                        'ranks': list(ranks[i][j])
+                        "image_id": batch["img_ids"][i].item(),
+                        "round_id": int(j + 1),
+                        "ranks": list(ranks[i][j])
                     })
-        gc.collect()
 
-if args.save_ranks:
-    print("Writing ranks to {}".format(args.save_path))
-    os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
-    json.dump(ranks_json, open(args.save_path, 'w'))
+    print("Writing ranks to {}".format(args.save_ranks_path))
+    os.makedirs(os.path.dirname(args.save_ranks_path), exist_ok=True)
+    json.dump(ranks_json, open(args.save_ranks_path, "w"))

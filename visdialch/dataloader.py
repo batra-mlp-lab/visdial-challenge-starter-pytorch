@@ -100,6 +100,11 @@ class VisDialDataset(Dataset):
             # maximum length of answer
             self.max_ans_len = self.data[dtype + '_ans'].size(2)
 
+        # reduce amount of data for preprocessing in fast mode
+        if overfit:
+            self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
+            self.data[dtype + '_img_ids'] = self.data[dtype + '_img_ids'][:5]
+
         self.num_data_points = {}
         for dtype in subsets:
             self.num_data_points[dtype] = len(self.data[dtype + '_img_fv'])
@@ -122,11 +127,6 @@ class VisDialDataset(Dataset):
             self._split = 'train'
         else:
             self._split = subsets[0]
-
-        # reduce amount of data for preprocessing in fast mode
-        if overfit:
-            self.data[dtype + '_img_fv'] = self.data[dtype + '_img_fv'][:5]
-            self.data[dtype + '_img_fnames'] = self.data[dtype + '_img_fnames'][:5]
 
     @property
     def split(self):

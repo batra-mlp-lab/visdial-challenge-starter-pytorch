@@ -22,7 +22,7 @@ parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml"
 parser.add_argument_group("Arguments independent of experiment reproducibility")
 parser.add_argument("--gpu-ids", nargs="+", type=int, default=-1,
                         help="List of ids of GPUs to use.")
-parser.add_argument("--cpu-workers", type=int, default=8,
+parser.add_argument("--cpu-workers", type=int, default=4,
                         help="Number of CPU workers for reading data.")
 parser.add_argument("--overfit", action="store_true",
                         help="Overfit model on 5 examples, meant for debugging.")
@@ -40,9 +40,13 @@ parser.add_argument("--save-path", default="checkpoints/",
 
 args = parser.parse_args()
 
-# keys: {"dataset", "model", "training"}
+# keys: {"dataset", "model", "training", "evaluation"}
 config = yaml.load(open(args.config_yml))
+
+# print config and args
 print(yaml.dump(config, default_flow_style=False))
+for arg in vars(args):
+    print('{:<20}: {}'.format(arg, getattr(args, arg)))
 
 # for reproducibility - refer https://pytorch.org/docs/stable/notes/randomness.html
 torch.manual_seed(0)
@@ -188,4 +192,4 @@ for epoch in range(start_epoch, config["training"]["num_epochs"] + 1):
         "encoder": encoder.module.state_dict(),
         "decoder": decoder.module.state_dict(),
         "optimizer": optimizer.state_dict()
-    }, os.path.join(args.save_path, "model_epoch_{}.pth".format(epoch)))
+    }, os.path.join(args.save_path, train_begin_str, f"model_epoch_{epoch}.pth"))
