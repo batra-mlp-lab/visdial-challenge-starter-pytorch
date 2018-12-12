@@ -1,4 +1,8 @@
 import argparse
+import contextlib
+
+from caffe2.proto import caffe2_pb2
+from caffe2.python import core
 
 
 parser = argparse.ArgumentParser(description="Extract bottom-up features from a Detectron model")
@@ -37,9 +41,18 @@ parser.add_argument(
 )
 parser.add_argument(
     "--feat_name",
-    help=" the name of the feature to extract, default: gpu_0/fc7",
-    default="gpu_0/fc7"
+    help=" the name of the feature to extract, default: fc7",
+    default="fc7"
 )
+
+
+@contextlib.contextmanager
+def CudaScope(gpu_id):
+    """Creates a GPU name scope and CUDA device scope. This function is provided
+    to reduce `with ...` nesting levels."""
+    gpu_device = core.DeviceOption(caffe2_pb2.CUDA, gpu_id)
+    with core.DeviceScope(gpu_device):
+        yield
 
 
 def main(args):

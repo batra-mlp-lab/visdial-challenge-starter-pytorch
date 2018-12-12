@@ -8,4 +8,10 @@ COPY . /workspace
 RUN pip install --upgrade pip && \
     pip install -r /workspace/requirements.txt
 
-EXPOSE 8008
+RUN git clone --depth 1 https://www.github.com/facebookresearch/detectron /detectron && \
+    pip install -r /detectron/requirements.txt
+
+WORKDIR /detectron
+RUN make
+
+WORKDIR /workspace
