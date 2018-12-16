@@ -8,12 +8,12 @@ from tqdm import tqdm
 import h5py
 import numpy as np
 
-from detectron.core.config import assert_and_infer_cfg, cfg, merge_cfg_from_file
+from detectron.core.config import assert_and_infer_cfg, merge_cfg_from_file
+from detectron.core.config import cfg as detectron_config
 from detectron.utils.boxes import nms as detectron_nms
-from detectron.utils.io import cache_url
-import detectron.utils.c2 as c2_utils
 import detectron.core.test as detectron_test
 import detectron.core.test_engine as infer_engine
+import detectron.utils.c2 as c2_utils
 
 
 c2_utils.import_detectron_ops()
@@ -21,20 +21,27 @@ c2_utils.import_detectron_ops()
 # thread safe and causes unwanted GPU memory allocations.
 cv2.ocl.setUseOpenCL(False)
 
-parser = argparse.ArgumentParser(description="Extract bottom-up features from a Detectron model")
+parser = argparse.ArgumentParser(
+    description="Extract bottom-up features from a model trained by Detectron")
+parser.add_argument(
+    "--image-root",
+    help="Path to a directory containing COCO/VisDial images. Note that this "
+         "directory must have images, and not sub-directories of splits. "
+         "Each HDF file should contain features from a single split."
+)
 parser.add_argument(
     "--config",
-    help="Model config file used by Detectron",
+    help="Path to model config file used by Detectron (.yaml)",
     default="data/config_faster_rcnn_x101.yaml",
 )
 parser.add_argument(
     "--weights",
-    help="Model weights file checkpointed from Detectron",
+    help="Path to model weights file saved by Detectron (.pkl)",
     default="data/model_faster_rcnn_x101.pkl",
 )
 parser.add_argument(
-    "--output-h5",
-    help="Path to output HDF file for saving bottom-up features",
+    "--save-path",
+    help="Path to output file for saving bottom-up features (.h5)",
     default="data/data_img_faster_rcnn_x101.h5",
 )
 parser.add_argument(
@@ -44,18 +51,20 @@ parser.add_argument(
     default=36
 )
 parser.add_argument(
-    "--image-root",
-    help="Path to COCO train/val or VisDial val/test images",
+    "--feat-name",
+    help="The name of the layer to extract features from.",
+    default="fc7"
+)
+parser.add_argument(
+    "--feat-dims",
+    help="Length of bottom-upfeature vectors.",
+    type=int,
+    default=2048
 )
 parser.add_argument(
     "--split",
-    help="Name of the split to process",
-    choices=["train", "val", "test"]
-)
-parser.add_argument(
-    "--feat-name",
-    help="The name of the feature to extract, default: fc7",
-    default="fc7"
+    choices=["train", "val", "test"],
+    help="Which split is being processed."
 )
 parser.add_argument(
     "--gpu-id",
@@ -65,15 +74,26 @@ parser.add_argument(
 )
 
 
-def get_detections_from_im(detectron_config,
-                           detectron_model,
-                           image,
-                           feat_blob_name,
-                           max_boxes=36,
-                           conf_thresh=0.):
-    assert conf_thresh >= 0
+def detect_image(detectron_model, image, args):
+    """Given an image and a detectron model, extract object boxes,
+    classes, confidences and features from the image using the model.
 
-    with c2_utils.NamedCudaScope(0):
+    Parameters
+    ----------
+    detectron_model
+        Detectron model.
+    image : np.ndarray
+        Image in BGR format.
+    args : argparse.Namespace
+        Parsed command-line arguments.
+
+    Returns
+    -------
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray
+        Object bounding boxes, classes, confidence and features.
+    """
+    
+    with c2_utils.NamedCudaScope(args.gpu_id):
         scores, cls_boxes, im_scale = detectron_test.im_detect_bbox(
             detectron_model,
             image,
@@ -84,7 +104,7 @@ def get_detections_from_im(detectron_config,
         num_proposals = scores.shape[0]
 
         rois = workspace.FetchBlob(f"gpu_{args.gpu_id}/rois")
-        roi_features = workspace.FetchBlob(f"gpu_{args.gpu_id}/{feat_blob_name}")
+        obj_features = workspace.FetchBlob(f"gpu_{args.gpu_id}/{args.feat_name}")
 
         cls_boxes = rois[:, 1:5] / im_scale
         max_conf = np.zeros((num_proposals,), dtype=np.float32)
@@ -101,60 +121,85 @@ def get_detections_from_im(detectron_config,
             max_cls[keep_idxs] = cls_ind
             max_box[keep_idxs] = dets[keep_idxs][:,:4]
 
-        keep_boxes = np.where(max_conf > conf_thresh)[0]
-        if len(keep_boxes) > max_boxes:
-            keep_boxes = np.argsort(max_conf)[::-1][:max_boxes]
-
-        objects = max_cls[keep_boxes]
-        obj_confidence = max_conf[keep_boxes]
+        keep_boxes = np.argsort(max_conf)[::-1][:args.max_boxes]
         obj_boxes = max_box[keep_boxes, :]
-    return obj_boxes, roi_features[keep_boxes, :], objects, obj_confidence
+        obj_classes = max_cls[keep_boxes]
+        obj_confidence = max_conf[keep_boxes]
+        obj_features = obj_features[keep_boxes, :]
+    return obj_boxes, obj_classes, obj_confidence, obj_features
 
 
 def image_id_from_path(image_path):
+    """Given a path to an image, return its id.
+
+    Parameters
+    ----------
+    image_path : str
+        Path to image, for example: coco_train2014/COCO_train2014/000000123456.jpg
+
+    Returns
+    -------
+    int
+        Corresponding image id (123456)
+    """
+
     return int(image_path.split("/")[-1][-16:-4])
 
 
 def main(args):
-    # specifically for visual genome
-    cfg.MODEL.NUM_ATTRIBUTES = -1
+    """Extract bottom-up features from all images in a directory using
+    a pre-trained Detectron model, and save them in HDF format.
 
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
+
+    # specifically for visual genome
+    detectron_config.MODEL.NUM_ATTRIBUTES = -1
     merge_cfg_from_file(args.config)
-    cfg.NUM_GPUS = 1
-    cfg.TRAIN.CPP_RPN = 'none'
-    args.weights = cache_url(args.weights, cfg.DOWNLOAD_CACHE)
+
+    # override some config options and validate the config
+    detectron_config.NUM_GPUS = 1
+    detectron_config.TRAIN.CPP_RPN = 'none'
     assert_and_infer_cfg(cache_urls=False)
 
-    detectron_model = infer_engine.initialize_model_from_cfg(args.weights)
+    # initialize model
+    detectron_model = infer_engine.initialize_model_from_cfg(args.weights, args.gpu_id)
 
+    # list of paths (example: "coco_train2014/COCO_train2014_000000123456.jpg")
     image_paths = [os.path.join(args.image_root, name)
-                   for name in os.listdir(args.image_root)]
-    output_h5 = h5py.File(args.output_h5, "w")
-    image_ids_h5d = output_h5.create_dataset(
+                   for name in os.listdir(args.image_root)
+                   if name not in {".", ".."}]
+
+    # create an output HDF to save extracted features
+    save_h5 = h5py.File(args.save_path, "w")
+    image_ids_h5d = save_h5.create_dataset(
         "image_ids", (len(image_paths), )
     )
 
-    # TODO: remove hardcoded 2048
-    features_h5d = output_h5.create_dataset(
-        "features", (len(image_paths), args.max_boxes, 2048),
-        chunks=(1, args.max_boxes, 2048)
+    # 'features' is a chunked dataset, each chunk holds features from one image
+    features_h5d = save_h5.create_dataset(
+        "features", (len(image_paths), args.max_boxes, args.feat_dims),
+        chunks=(1, args.max_boxes, args.feat_dims)
     )
 
     for idx, image_path in tqdm(enumerate(image_paths)):
         image_ids_h5d[idx] = image_id_from_path(image_path)
 
         image = cv2.imread(image_path)
-        _, bottomup_features, _, _ = get_detections_from_im(
-            cfg,
-            detectron_model,
-            image,
-            args.feat_name,
-            args.max_boxes)
+        # we only care about features, not classes
+        _, _, _, bottomup_features = detect_image(detectron_model, image, args)
         features_h5d[idx] = bottomup_features
-    output_h5.close()
+
+    # set current split name in attributrs of file, for tractability
+    save_h5.attrs["split"] = args.split
+    save_h5.close()
 
 
 if __name__ == "__main__":
-    workspace.GlobalInit(['caffe2', '--caffe2_log_level=0'])
+    # set higher log level to prevent terminal spam
+    workspace.GlobalInit(['caffe2', '--caffe2_log_level=3'])
     args = parser.parse_args()
     main(args)
