@@ -9,7 +9,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 import yaml
 
-from visdialch.dataloader import VisDialDataset
+from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
 
@@ -18,6 +18,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
                         help="Path to a config file listing reader, model and "
                              "optimization parameters.")
+parser.add_argument("--train-json", default="data/visdial_1.0_train.json",
+                        help="Path to VisDial v1.0 training data.")
 
 parser.add_argument_group("Arguments independent of experiment reproducibility")
 parser.add_argument("--gpu-ids", nargs="+", type=int, default=-1,
@@ -65,21 +67,21 @@ else:
 # loading dataset wrapping with a dataloader
 # ----------------------------------------------------------------------------
 
-dataset = VisDialDataset(config["dataset"], ["train"], overfit=args.overfit)
+dataset = VisDialDataset(args.train_json,
+                         config["dataset"],
+                         overfit=args.overfit)
 dataloader = DataLoader(dataset,
                         batch_size=config["training"]["batch_size"],
                         shuffle=False,
-                        collate_fn=dataset.collate_fn,
                         num_workers=args.cpu_workers)
-
-# transfer some attributes from dataset to model args
-for key in {"vocab_size", "max_ques_count"}:
-    config["model"][key] = getattr(dataset, key)
 
 
 # ----------------------------------------------------------------------------
 # setup the model and optimizer
 # ----------------------------------------------------------------------------
+
+# let the model know vocabulary size, to declare embedding layer
+config["model"]["vocab_size"] = len(dataset.vocabulary)
 
 encoder = Encoder(config["model"])
 decoder = Decoder(config["model"])
@@ -136,7 +138,7 @@ os.makedirs(os.path.join(args.save_path, train_begin_str))
 shutil.copy(args.config_yml, os.path.join(args.save_path, train_begin_str))
 
 # calculate the iterations per epoch
-ipe = dataset.num_data_points["train"] // config["training"]["batch_size"]
+ipe = len(dataset) // config["training"]["batch_size"]
 print("{} iter per epoch.".format(ipe))
 
 

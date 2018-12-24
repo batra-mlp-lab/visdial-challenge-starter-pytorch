@@ -94,9 +94,9 @@ class VisDialDataset(Dataset):
         item["opt_len"] = torch.tensor(answer_option_lengths).long()
         item["num_rounds"] = torch.tensor(visdial_instance["num_rounds"]).long()
         if "test" not in self.split:
-            item["ans_inds"] = torch.tensor(answer_indices).long()
-        # TODO: add image features in here, for now put a random tensor
-        item["img_feat"] = torch.randn(2048)
+            item["ans_ind"] = torch.tensor(answer_indices).long()
+        # TODO: add image features in here, for now put a random tensor matching vgg features
+        item["img_feat"] = torch.randn(4096)
         return item
 
     def _pad_sequences(self, sequences: List[List[int]]):
