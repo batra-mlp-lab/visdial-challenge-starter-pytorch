@@ -22,7 +22,7 @@ class Vocabulary(object):
         When initializing the vocabulary from word counts, you can specify a minimum count, and
         every token with a count less than this will be excluded from vocabulary.
     """
-    
+
     PAD_TOKEN = "<PAD>"
     SOS_TOKEN = "<S>"
     EOS_TOKEN = "</S>"
@@ -41,8 +41,9 @@ class Vocabulary(object):
             word_counts = json.load(word_counts_file)
 
             # form a list of (word, count) tuples and apply min_count threshold
-            word_counts = [(word, count) for word, count in word_counts.items()
-                           if count >= min_count]
+            word_counts = [
+                (word, count) for word, count in word_counts.items() if count >= min_count
+            ]
             # sort in descending order of word counts
             word_counts = sorted(word_counts, key=lambda wc: -wc[1])
             words = [w[0] for w in word_counts]
@@ -58,7 +59,7 @@ class Vocabulary(object):
         self.index2word = {index: word for word, index in self.word2index.items()}
 
     @classmethod
-    def from_saved(cls, saved_vocabulary_path: str) -> 'Vocabulary':
+    def from_saved(cls, saved_vocabulary_path: str) -> "Vocabulary":
         """Build the vocabulary from a json file saved by ``save`` method.
 
         Parameters

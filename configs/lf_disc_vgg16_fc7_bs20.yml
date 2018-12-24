@@ -5,7 +5,9 @@ dataset:
   visdial_params_json: 'data/visdial_params.json'
   img_norm: 1
   concat_history: True
-
+  max_sequence_length: 20
+  vocab_min_count: 5
+  word_counts_json: 'data/visdial_1.0_word_counts_train.json'
 
 # Model related arguments
 model:

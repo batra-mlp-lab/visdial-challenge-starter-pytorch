@@ -24,6 +24,7 @@ class VisDialJsonReader(object):
     visdial_json : str
         Path to a json file containing VisDial v1.0 train, val or test data.
     """
+
     def __init__(self, visdial_json: str):
         with open(visdial_json, "r") as visdial_file:
             visdial_data = json.load(visdial_file)
@@ -44,6 +45,9 @@ class VisDialJsonReader(object):
         caption_for_image = self.captions[image_id]
         dialog_for_image = copy.copy(self.dialogs[image_id])
 
+        # number of rounds, 10 for train and val, 1-10 for test
+        num_rounds = len(dialog_for_image)
+
         # replace question and answer indices with actual string
         for i in range(len(dialog_for_image)):
             dialog_for_image[i]["question"] = self.questions[dialog_for_image[i]["question"]]
@@ -63,10 +67,16 @@ class VisDialJsonReader(object):
         while len(dialog_for_image) < 10:
             dialog_for_image.append({"question": "", "answer": ""})
 
+        # add empty answer options if not provided, to be consistent (for test split)
+        for i in range(len(dialog_for_image)):
+            if "answer_options" not in dialog_for_image[i]:
+                dialog_for_image[i]["answer_options"] = [""] * 100
+
         return {
             "image_id": image_id,
             "caption": caption_for_image,
-            "dialog": dialog_for_image
+            "dialog": dialog_for_image,
+            "num_rounds": num_rounds,
         }
 
     @property
