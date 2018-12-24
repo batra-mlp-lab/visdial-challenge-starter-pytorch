@@ -51,20 +51,16 @@ class VisDialDataset(Dataset):
         caption = visdial_instance["caption"]
         dialog = visdial_instance["dialog"]
 
-        # tokenize caption, question, answer and answer options to integers, using Vocabulary
-        caption = [self.vocabulary.get_index_by_word(word) for word in caption]
+        # convert word tokens of caption, question, answer and answer options to integers
+        caption = self.vocabulary.to_indices(caption)
         for i in range(len(dialog)):
-            dialog[i]["question"] = [
-                self.vocabulary.get_index_by_word(word) for word in dialog[i]["question"]
-            ]
-            dialog[i]["answer"] = [
-                self.vocabulary.get_index_by_word(word) for word in dialog[i]["answer"]
-            ]
+            dialog[i]["question"] = self.vocabulary.to_indices(dialog[i]["question"])
+            dialog[i]["answer"] = self.vocabulary.to_indices(dialog[i]["answer"])
+
             for j in range(len(dialog[i]["answer_options"])):
-                dialog[i]["answer_options"][j] = [
-                    self.vocabulary.get_index_by_word(word)
-                    for word in dialog[i]["answer_options"][j]
-                ]
+                dialog[i]["answer_options"][j] = self.vocabulary.to_indices(
+                    dialog[i]["answer_options"][j]
+                )
 
         questions, question_lengths = self._pad_sequences(
             [dialog_round["question"] for dialog_round in dialog]

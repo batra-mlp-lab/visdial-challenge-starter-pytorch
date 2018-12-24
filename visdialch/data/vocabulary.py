@@ -5,6 +5,7 @@ out-of-vocabulary words to the corresponding token.
 """
 import json
 import os
+from typing import List, Union
 
 
 class Vocabulary(object):
@@ -71,11 +72,11 @@ class Vocabulary(object):
             cls.word2index = json.load(saved_vocabulary_file)
         cls.index2word = {index: word for word, index in cls.word2index.items()}
 
-    def get_index_by_word(self, word: str) -> int:
-        return self.word2index.get(word, self.UNK_INDEX)
+    def to_indices(self, words: List[str]) -> List[int]:
+        return [self.word2index.get(word, self.UNK_INDEX) for word in words]
 
-    def get_word_by_index(self, index: int) -> str:
-        return self.index2word.get(index, self.UNK_TOKEN)
+    def to_words(self, indices: List[int]) -> List[str]:
+        return [self.index2word.get(index, self.UNK_TOKEN) for index in indices]
 
     def save(self, save_vocabulary_path: str) -> None:
         with open(save_vocabulary_path, "w") as save_vocabulary_file:
