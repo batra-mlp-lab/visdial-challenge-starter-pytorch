@@ -1,7 +1,5 @@
 from typing import Dict, List, Union
 
-from nltk.tokenize import word_tokenize
-
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
@@ -41,10 +39,6 @@ class VisDialDataset(Dataset):
     def split(self):
         return self.reader.split
 
-    # ------------------------------------------------------------------------
-    # methods to override - __len__ and __getitem__ methods
-    # ------------------------------------------------------------------------
-
     def __len__(self):
         return len(self.image_ids)
 
@@ -58,19 +52,15 @@ class VisDialDataset(Dataset):
         dialog = visdial_instance["dialog"]
 
         # tokenize caption, question, answer and answer options to integers, using Vocabulary
-        caption = word_tokenize(caption)
         caption = [self.vocabulary.get_index_by_word(word) for word in caption]
         for i in range(len(dialog)):
-            dialog[i]["question"] = word_tokenize(dialog[i]["question"])
             dialog[i]["question"] = [
                 self.vocabulary.get_index_by_word(word) for word in dialog[i]["question"]
             ]
-            dialog[i]["answer"] = word_tokenize(dialog[i]["answer"])
             dialog[i]["answer"] = [
                 self.vocabulary.get_index_by_word(word) for word in dialog[i]["answer"]
             ]
             for j in range(len(dialog[i]["answer_options"])):
-                dialog[i]["answer_options"][j] = word_tokenize(dialog[i]["answer_options"][j])
                 dialog[i]["answer_options"][j] = [
                     self.vocabulary.get_index_by_word(word)
                     for word in dialog[i]["answer_options"][j]
@@ -99,53 +89,19 @@ class VisDialDataset(Dataset):
         # collect everything as tensors for ``collate_fn`` of dataloader to work seemlessly
         # questions, history, etc. are converted to LongTensors, for nn.Embedding input
         item = {}
-        item["img_ids"] = torch.tensor([image_id]).long()
-        item["ques"] = torch.tensor(questions).long()
+        item["img_ids"] = torch.tensor(image_id).long()
+        item["ques"] = questions.long()
+        item["hist"] = history.long()
+        item["opt"] = answer_options.long()
         item["ques_len"] = torch.tensor(question_lengths).long()
-        item["opt"] = torch.tensor(answer_options).long()
-        item["opt_len"] = torch.tensor(answer_option_lengths).long()
-        item["hist"] = torch.tensor(history).long()
         item["hist_len"] = torch.tensor(history_lengths).long()
+        item["opt_len"] = torch.tensor(answer_option_lengths).long()
         item["num_rounds"] = torch.tensor(visdial_instance["num_rounds"]).long()
         if "test" not in self.split:
             item["ans_inds"] = torch.tensor(answer_indices).long()
         # TODO: add image features in here, for now put a random tensor
         item["img_feat"] = torch.randn(2048)
         return item
-
-    # def collate_fn(self, batch):
-    #     dtype = self._split
-    #     merged_batch = {key: [d[key] for d in batch] for key in batch[0]}
-    #     out = {}
-
-    #     # every key must be a tensor for torch.nn.DataParallel to work
-    #     for key in merged_batch:
-    #         if key in {"index", "num_rounds", "img_ids", "cap_len"}:
-    #             # convert simple lists to tensors
-    #             out[key] = torch.tensor(merged_batch[key]).long()
-    #         else:
-    #             # convert list of tensors to batch tensor
-    #             out[key] = torch.stack(merged_batch[key], 0)
-
-    #     # dynamic shaping of padded batch
-    #     out["hist"] = out["hist"][:, :, : torch.max(out["hist_len"])].contiguous()
-    #     out["ques"] = out["ques"][:, :, : torch.max(out["ques_len"])].contiguous()
-    #     out["opt"] = out["opt"][:, :, :, : torch.max(out["opt_len"])].contiguous()
-
-    #     batch_keys = [
-    #         "img_ids",
-    #         "num_rounds",
-    #         "img_feat",
-    #         "hist",
-    #         "hist_len",
-    #         "ques",
-    #         "ques_len",
-    #         "opt",
-    #         "opt_len",
-    #     ]
-    #     if dtype != "test":
-    #         batch_keys.append("ans_ind")
-    #     return {key: out[key] for key in batch_keys}
 
     def _pad_sequences(self, sequences: List[List[int]]):
         """Given tokenized sequences (either questions, answers or answer options, tokenized
@@ -218,7 +174,7 @@ class VisDialDataset(Dataset):
                 for j in range(i + 1):
                     concatenated_history[i].extend(history[j])
 
-            max_history_length *= self.config["max_sequence_length"] * 2 * len(history)
+            max_history_length = self.config["max_sequence_length"] * 2 * len(history)
             history = concatenated_history
 
         history_lengths = [len(round_history) for round_history in history]

@@ -1,7 +1,7 @@
 """
 A Reader simply reads data from disk and returns it almost as is. Readers should be utilized by 
 torch ``Dataset``s. Any type of data pre-processing is not recommended in the reader, such as
-tokenizing sentences, embedding tokens, or passing an image through a pre-trained CNN.
+tokenizing words to integers, embedding tokens, or passing an image through a pre-trained CNN.
 
 Each Reader should be initialized by one or more file paths, and should provide access to a
 single data instance by ``image_id`` of VisDial images (implement ``__getitem__``). In addition,
@@ -12,6 +12,10 @@ frees memory by deleting variables. A Reader shall become useless after calling 
 import copy
 import json
 from typing import Dict, List, Union
+
+# a bit slow, and just splits sentences to list of words, can be doable in the reader
+from nltk.tokenize import word_tokenize
+from tqdm import tqdm
 
 
 class VisDialJsonReader(object):
@@ -28,55 +32,71 @@ class VisDialJsonReader(object):
     def __init__(self, visdial_json: str):
         with open(visdial_json, "r") as visdial_file:
             visdial_data = json.load(visdial_file)
+            self._split = visdial_data["split"]
+
             self.questions = visdial_data["data"]["questions"]
             self.answers = visdial_data["data"]["answers"]
 
+            # add empty question, answer at the end, useful for padding dialog rounds for test
+            self.questions.append("")
+            self.answers.append("")
+
+            # image_id serves as key for all three dicts here
             self.captions = {}
             self.dialogs = {}
+            self.num_rounds = {}
             for dialog_for_image in visdial_data["data"]["dialogs"]:
                 self.captions[dialog_for_image["image_id"]] = dialog_for_image["caption"]
+
+                # record original length of dialog, before padding
+                # 10 for train and val splits, 10 or less for test split
+                self.num_rounds[dialog_for_image["image_id"]] = len(dialog_for_image["dialog"])
+
+                # pad dialog at the end with empty question and answer pairs (for test split)
+                while len(dialog_for_image["dialog"]) < 10:
+                    dialog_for_image["dialog"].append({"question": -1, "answer": -1})
+
+                # add empty answer /answer options if not provided (for test split)
+                for i in range(len(dialog_for_image["dialog"])):
+                    if "answer" not in dialog_for_image["dialog"][i]:
+                        dialog_for_image["dialog"][i]["answer"] = -1
+                    if "answer_options" not in dialog_for_image["dialog"][i]:
+                        dialog_for_image["dialog"][i]["answer_options"] = [-1] * 100
+
                 self.dialogs[dialog_for_image["image_id"]] = dialog_for_image["dialog"]
-            self._split = visdial_data["split"]
+
+            print(f"[{self._split}] Tokenizing questions...")
+            for i in tqdm(range(len(self.questions))):
+                self.questions[i] = word_tokenize(self.questions[i])
+
+            print(f"[{self._split}] Tokenizing answers...")
+            for i in tqdm(range(len(self.answers))):
+                self.answers[i] = word_tokenize(self.answers[i])
+
+            print(f"[{self._split}] Tokenizing captions...")
+            for image_id, caption in tqdm(self.captions.items()):
+                self.captions[image_id] = word_tokenize(caption)
 
     def __len__(self):
-        return len(self.captions)
+        return len(self.dialogs)
 
     def __getitem__(self, image_id: int) -> Dict[str, Union[int, str, List]]:
         caption_for_image = self.captions[image_id]
         dialog_for_image = copy.copy(self.dialogs[image_id])
+        num_rounds = self.num_rounds[image_id]
 
-        # number of rounds, 10 for train and val, 1-10 for test
-        num_rounds = len(dialog_for_image)
-
-        # replace question and answer indices with actual string
+        # replace question and answer indices with actual word tokens
         for i in range(len(dialog_for_image)):
             dialog_for_image[i]["question"] = self.questions[dialog_for_image[i]["question"]]
-
-            # last round in test split does not have answer, add empty string
-            if "answer" in dialog_for_image[i]:
-                dialog_for_image[i]["answer"] = self.answers[dialog_for_image[i]["answer"]]
-            else:
-                dialog_for_image[i]["answer"] = ""
-
-            # only the last round has answer options (for test split)
-            if "answer_options" in dialog_for_image[i]:
-                for j, answer_option in enumerate(dialog_for_image[i]["answer_options"]):
-                    dialog_for_image[i]["answer_options"][j] = self.answers[answer_option]
-
-        # pad dialog at the end with empty question and answer pairs (for test split)
-        while len(dialog_for_image) < 10:
-            dialog_for_image.append({"question": "", "answer": ""})
-
-        # add empty answer options if not provided, to be consistent (for test split)
-        for i in range(len(dialog_for_image)):
-            if "answer_options" not in dialog_for_image[i]:
-                dialog_for_image[i]["answer_options"] = [""] * 100
+            dialog_for_image[i]["answer"] = self.answers[dialog_for_image[i]["answer"]]
+            for j, answer_option in enumerate(dialog_for_image[i]["answer_options"]):
+                dialog_for_image[i]["answer_options"][j] = self.answers[answer_option]
 
         return {
             "image_id": image_id,
             "caption": caption_for_image,
             "dialog": dialog_for_image,
-            "num_rounds": num_rounds,
+            "num_rounds": num_rounds
         }
 
     @property
@@ -87,4 +107,4 @@ class VisDialJsonReader(object):
         """Delete all the data this reader is holding, and free memory. The reader becomes
         useless after calling this method.
         """
-        del self.questions, self.answers, self.captions, self.dialogs
+        del self.questions, self.answers, self.captions, self.dialogs, self.num_rounds
