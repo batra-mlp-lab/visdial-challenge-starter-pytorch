@@ -7,12 +7,16 @@ Each Reader should be initialized by one or more file paths, and should provide 
 single data instance by ``image_id`` of VisDial images (implement ``__getitem__``). In addition,
 a reader should implement ``close`` method, which closes any open file handles, and explicitly
 frees memory by deleting variables. A Reader shall become useless after calling ``close``.
+
+Note: I should have made a base Reader class and let these two extend it, but this way they are
+independent and fit to be copy-pasted in some other codebase. :) 
 """
 
 import copy
 import json
 from typing import Dict, List, Union
 
+import h5py
 # a bit slow, and just splits sentences to list of words, can be doable in the reader
 from nltk.tokenize import word_tokenize
 from tqdm import tqdm
@@ -25,12 +29,12 @@ class VisDialJsonReader(object):
 
     Parameters
     ----------
-    visdial_json : str
+    visdial_jsonpath : str
         Path to a json file containing VisDial v1.0 train, val or test data.
     """
 
-    def __init__(self, visdial_json: str):
-        with open(visdial_json, "r") as visdial_file:
+    def __init__(self, visdial_jsonpath: str):
+        with open(visdial_jsonpath, "r") as visdial_file:
             visdial_data = json.load(visdial_file)
             self._split = visdial_data["split"]
 
@@ -108,3 +112,54 @@ class VisDialJsonReader(object):
         useless after calling this method.
         """
         del self.questions, self.answers, self.captions, self.dialogs, self.num_rounds
+
+
+class ImageFeaturesHdfReader(object):
+    """
+    A reader for generic HDF files with non-nested groups. Here it serves the purpose of reading
+    pre-trained image features. A typical HDF file is expected to have a column of primary key
+    ("image_id") and one or more columns containing image features.
+
+    Example of an HDF file:
+    ```
+    visdial_train_faster_rcnn_bottomup_features.h5
+       |--- "image_id" [shape: (num_images, )]
+       |--- "features" [shape: (num_images, num_proposals, feature_size)]
+       +--- .attrs ("split", "train")
+    ```
+    Refer ``$PROJECT_ROOT/data/extract_bottomup.py`` script for more details about HDF structure.
+
+    Parameters
+    ----------
+    features_hdfpath : str
+        Path to an HDF file containing VisDial v1.0 train, val or test split image features.
+    primary_key : str, optional (default = "image_id")
+        Name of column in HDF holding the primary key, named "image_id" in all provided
+        pre-extracted feature files.
+    """
+
+    def __init__(self,
+                 features_hdfpath: str,
+                 primary_key: str = "image_id"):
+        self.features_h5 = h5py.File(features_filepath, "r")
+        self.primary_key_list = list(self.features_h5[primary_key])
+        self._split = self.features_h5.attrs["split"]
+
+    def __len__(self):
+        return len(self.primary_key_list)
+
+    def __getitem__(self, primary_key):
+        index = self.primary_key_list.index(primary_key)
+        item = {}
+        for key in list(self.features_h5.keys()):
+            item[key] = self.features_h5[key][index]
+        return item
+
+    @property
+    def split(self):
+        return self._split
+
+    def close(self):
+        """Close the HDF file delete other data."""
+        self.features_h5.close()
+        del self.primary_key_list
