@@ -1,13 +1,15 @@
 # Dataset reader arguments
 dataset:
-  img_features_h5: 'data/data_img_vgg16_fc7.h5'
-  visdial_data_h5: 'data/visdial_data.h5'
-  visdial_params_json: 'data/visdial_params.json'
+  image_features_train_h5: 'data/features_train_vgg16_fc7.h5'
+  image_features_val_h5: 'data/features_val_vgg16_fc7.h5'
+  image_features_test_h5: 'data/features_test_vgg16_fc7.h5'
+  word_counts_json: 'data/visdial_1.0_word_counts_train.json'
+
   img_norm: 1
   concat_history: True
   max_sequence_length: 20
   vocab_min_count: 5
-  word_counts_json: 'data/visdial_1.0_word_counts_train.json'
+
 
 # Model related arguments
 model:

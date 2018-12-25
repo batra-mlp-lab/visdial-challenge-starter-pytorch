@@ -1,43 +1,43 @@
 from typing import Dict, List, Union
 
 import torch
+from torch.nn.functional import normalize
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
-from visdialch.data.readers import VisDialJsonReader
+from visdialch.data.readers import VisDialJsonReader, ImageFeaturesHdfReader
 from visdialch.data.vocabulary import Vocabulary
 
 
 class VisDialDataset(Dataset):
     def __init__(self,
-                 visdial_json_filepath: str,
+                 visdial_jsonpath: str,
                  config: Dict[str, Union[int, str]],
                  overfit: bool = False):
         super().__init__()
         self.config = config
-        self.reader = VisDialJsonReader(visdial_json_filepath)
+        self.json_reader = VisDialJsonReader(visdial_jsonpath)
         self.vocabulary = Vocabulary(
             config["word_counts_json"], min_count=config["vocab_min_count"]
         )
 
+        # initialize image features reader according to split
+        image_features_hdfpath = config["image_features_train_h5"]
+        if "val" in self.json_reader.split:
+            image_features_hdfpath = config["image_features_val_h5"]
+        elif "test" in self.json_reader.split:
+            image_features_hdfpath = config["image_features_test_h5"]
+
+        self.hdf_reader = ImageFeaturesHdfReader(image_features_hdfpath)
+
         # keep a list of image_ids as primary keys to access data
-        self.image_ids = list(self.reader.dialogs.keys())
-
-        # print("Dataloader loading h5 file: {}".format(config["img_features_h5"]))
-        # img_file = h5py.File(config["img_features_h5"], "r")
-        # img_feats = torch.from_numpy(np.array(img_file["images_" + dtype]))
-
-        # if config["img_norm"]:
-        #     print("Normalizing image features...")
-        #     img_feats = F.normalize(img_feats, dim=1, p=2)
-
-        # reduce amount of data for preprocessing in fast mode
+        self.image_ids = list(self.json_reader.dialogs.keys())
         if overfit:
             self.image_ids = self.image_ids[:5]
 
     @property
     def split(self):
-        return self.reader.split
+        return self.json_reader.split
 
     def __len__(self):
         return len(self.image_ids)
@@ -46,8 +46,15 @@ class VisDialDataset(Dataset):
         # get image_id, which serves as a primary key for current instance
         image_id = self.image_ids[index]
 
-        # retrieve instance for this image_id using the reader
-        visdial_instance = self.reader[image_id]
+        # get image features for this image_id using hdf reader
+        image_features = self.hdf_reader[image_id]["features"]
+        image_features = torch.tensor(image_features)
+        # normalize image features at zero-th dimension (since there's no batch dimension)
+        if self.config["img_norm"]:
+            image_features = normalize(image_features, dim=0, p=2)
+
+        # retrieve instance for this image_id using json reader
+        visdial_instance = self.json_reader[image_id]
         caption = visdial_instance["caption"]
         dialog = visdial_instance["dialog"]
 
@@ -86,6 +93,7 @@ class VisDialDataset(Dataset):
         # questions, history, etc. are converted to LongTensors, for nn.Embedding input
         item = {}
         item["img_ids"] = torch.tensor(image_id).long()
+        item["img_feat"] = image_features
         item["ques"] = questions.long()
         item["hist"] = history.long()
         item["opt"] = answer_options.long()
@@ -95,8 +103,6 @@ class VisDialDataset(Dataset):
         item["num_rounds"] = torch.tensor(visdial_instance["num_rounds"]).long()
         if "test" not in self.split:
             item["ans_ind"] = torch.tensor(answer_indices).long()
-        # TODO: add image features in here, for now put a random tensor matching vgg features
-        item["img_feat"] = torch.randn(4096)
         return item
 
     def _pad_sequences(self, sequences: List[List[int]]):

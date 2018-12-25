@@ -141,7 +141,7 @@ class ImageFeaturesHdfReader(object):
     def __init__(self,
                  features_hdfpath: str,
                  primary_key: str = "image_id"):
-        self.features_h5 = h5py.File(features_filepath, "r")
+        self.features_h5 = h5py.File(features_hdfpath, "r")
         self.primary_key_list = list(self.features_h5[primary_key])
         self._split = self.features_h5.attrs["split"]
 
