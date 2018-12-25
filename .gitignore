@@ -27,6 +27,7 @@ MANIFEST
 
 # Datasets, pretrained models and preprocessed files
 data/
+!visdialch/data/
 
 # Checkpoints directory
 checkpoints/

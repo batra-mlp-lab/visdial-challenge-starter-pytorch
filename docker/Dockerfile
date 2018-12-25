@@ -3,9 +3,9 @@
 
 FROM pytorch/pytorch:0.4.1-cuda9-cudnn7-devel
 
-RUN apt-get install libglib2.0-0 libsm6 libxrender1 libxext6
+RUN apt-get update && apt-get install -y libglib2.0-0 libsm6 libxrender1 libxext6
 
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip && pip install cython
 RUN git clone --depth 1 https://www.github.com/batra-mlp-lab/visdial-challenge-starter-pytorch /workspace && \
     pip install -r /workspace/requirements.txt
 

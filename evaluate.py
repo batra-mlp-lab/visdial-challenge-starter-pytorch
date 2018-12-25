@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import yaml
 
-from visdialch.dataloader import VisDialDataset
+from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
@@ -19,12 +19,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
                         help="Path to a config file listing reader, model and "
                              "optimization parameters.")
+parser.add_argument("--eval-json", default="data/visdial_1.0_val.json",
+                        help="Path to VisDial v1.0 val/test data, whichever to evaluate on.")
 
 parser.add_argument_group("Evaluation related arguments")
 parser.add_argument("--load-path", default="checkpoints/model.pth",
                         help="Path to load pretrained checkpoint from.")
-parser.add_argument("--split", default="val", choices=["val", "test"],
-                        help="Split to evaluate on")
 parser.add_argument("--use-gt", action="store_true",
                         help="Whether to use ground truth for retrieving ranks")
 
@@ -45,9 +45,6 @@ parser.add_argument("--save-ranks-path", default="logs/ranks.json",
 # ----------------------------------------------------------------------------
 
 args = parser.parse_args()
-if args.use_gt and args.split == "test":
-    print("Warning: No ground truth for test split, changing use_gt to False.")
-    args.use_gt = False
 
 # keys: {"dataset", "model", "training", "evaluation"}
 config = yaml.load(open(args.config_yml))
@@ -74,21 +71,24 @@ else:
 # loading dataset wrapping with a dataloader
 # ----------------------------------------------------------------------------
 
-dataset = VisDialDataset(config["dataset"], [args.split], overfit=args.overfit)
+dataset = VisDialDataset(args.eval_json,
+                         config["dataset"],
+                         overfit=args.overfit)
 dataloader = DataLoader(dataset,
                         batch_size=config["evaluation"]["batch_size"],
                         shuffle=False,
-                        collate_fn=dataset.collate_fn,
                         num_workers=args.cpu_workers)
 
-# transfer some attributes from dataset to model args
-for key in {"vocab_size", "max_ques_count"}:
-    config["model"][key] = getattr(dataset, key)
-
+if args.use_gt and "test" in dataset.split:
+    print("Warning: No ground truth for test split, changing use_gt to False.")
+    args.use_gt = False
 
 # ----------------------------------------------------------------------------
 # setup the model
 # ----------------------------------------------------------------------------
+
+# let the model know vocabulary size, to declare embedding layer
+config["model"]["vocab_size"] = len(dataset.vocabulary)
 
 components = torch.load(args.load_path)
 
@@ -155,18 +155,19 @@ else:
 
         for i in range(len(batch["img_ids"])):
             # cast into types explicitly to ensure no errors in schema
-            if args.split == "test":
+            # round ids are 1-10, not 0-9
+            if "test" in dataset.split:
                 ranks_json.append({
                     "image_id": batch["img_ids"][i].item(),
-                    "round_id": int(batch["num_rounds"][i]),
-                    "ranks": list(ranks[i][batch["num_rounds"][i] - 1])
+                    "round_id": int(batch["num_rounds"][i].item()),
+                    "ranks": [rank.item() for rank in ranks[i][batch["num_rounds"][i] - 1]]
                 })
             else:
                 for j in range(batch["num_rounds"][i]):
                     ranks_json.append({
                         "image_id": batch["img_ids"][i].item(),
                         "round_id": int(j + 1),
-                        "ranks": list(ranks[i][j])
+                        "ranks": [rank.item() for rank in ranks[i][j]]
                     })
 
     print("Writing ranks to {}".format(args.save_ranks_path))
