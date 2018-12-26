@@ -4,9 +4,7 @@ torch ``Dataset``s. Any type of data pre-processing is not recommended in the re
 tokenizing words to integers, embedding tokens, or passing an image through a pre-trained CNN.
 
 Each Reader should be initialized by one or more file paths, and should provide access to a
-single data instance by ``image_id`` of VisDial images (implement ``__getitem__``). In addition,
-a reader should implement ``close`` method, which closes any open file handles, and explicitly
-frees memory by deleting variables. A Reader shall become useless after calling ``close``.
+single data instance by ``image_id`` of VisDial images (implement ``__getitem__``).
 
 Note: I should have made a base Reader class and let these two extend it, but this way they are
 independent and fit to be copy-pasted in some other codebase. :) 
@@ -107,12 +105,6 @@ class VisDialJsonReader(object):
     def split(self):
         return self._split
 
-    def close(self):
-        """Delete all the data this reader is holding, and free memory. The reader becomes
-        useless after calling this method.
-        """
-        del self.questions, self.answers, self.captions, self.dialogs, self.num_rounds
-
 
 class ImageFeaturesHdfReader(object):
     """
@@ -141,25 +133,24 @@ class ImageFeaturesHdfReader(object):
     def __init__(self,
                  features_hdfpath: str,
                  primary_key: str = "image_id"):
-        self.features_h5 = h5py.File(features_hdfpath, "r")
-        self.primary_key_list = list(self.features_h5[primary_key])
-        self._split = self.features_h5.attrs["split"]
+        self.features_hdfpath = features_hdfpath
+        with h5py.File(self.features_hdfpath, "r") as features_hdf:
+            self.features_hdfkeys = list(features_hdf.keys())
+            self.primary_key_list = list(features_hdf[primary_key])
+            self._split = features_hdf.attrs["split"]
 
     def __len__(self):
         return len(self.primary_key_list)
 
     def __getitem__(self, primary_key):
+        features_hdf = h5py.File(self.features_hdfpath, "r")
         index = self.primary_key_list.index(primary_key)
         item = {}
-        for key in list(self.features_h5.keys()):
-            item[key] = self.features_h5[key][index]
+        with h5py.File(self.features_hdfpath, "r") as features_hdf:
+            for key in self.features_hdfkeys:
+                item[key] = features_hdf[key][index]
         return item
 
     @property
     def split(self):
         return self._split
-
-    def close(self):
-        """Close the HDF file delete other data."""
-        self.features_h5.close()
-        del self.primary_key_list
