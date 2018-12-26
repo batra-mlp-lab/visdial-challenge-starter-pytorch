@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime
+import itertools
 import os
 import shutil
 
@@ -7,11 +8,13 @@ import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 import yaml
 
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
+from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 
 
 parser = argparse.ArgumentParser()
@@ -20,14 +23,21 @@ parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml"
                              "optimization parameters.")
 parser.add_argument("--train-json", default="data/visdial_1.0_train.json",
                         help="Path to VisDial v1.0 training data.")
+parser.add_argument("--val-json", default="data/visdial_1.0_val.json",
+                        help="Path to VisDial v1.0 training data.")
 
 parser.add_argument_group("Arguments independent of experiment reproducibility")
+
 parser.add_argument("--gpu-ids", nargs="+", type=int, default=-1,
                         help="List of ids of GPUs to use.")
 parser.add_argument("--cpu-workers", type=int, default=4,
                         help="Number of CPU workers for reading data.")
 parser.add_argument("--overfit", action="store_true",
                         help="Overfit model on 5 examples, meant for debugging.")
+parser.add_argument("--do-crossval", action="store_true",
+                        help="Whether to perform cross-validation on val split. "
+                             "Not recommended to set this flag if training is done "
+                             "on train + val splits.")
 
 parser.add_argument_group("Checkpointing related arguments")
 parser.add_argument("--load-path", default="",
@@ -36,9 +46,9 @@ parser.add_argument("--save-path", default="checkpoints/",
                         help="Path of directory to create checkpoint directory "
                              "and save checkpoints.")
 
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 # input arguments and config
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 
 args = parser.parse_args()
 
@@ -63,25 +73,31 @@ else:
     device = torch.device("cpu")
 
 
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 # loading dataset wrapping with a dataloader
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 
-dataset = VisDialDataset(args.train_json,
-                         config["dataset"],
-                         overfit=args.overfit)
-dataloader = DataLoader(dataset,
-                        batch_size=config["training"]["batch_size"],
-                        shuffle=False,
-                        num_workers=args.cpu_workers)
+train_dataset = VisDialDataset(
+    args.train_json, config["dataset"], overfit=args.overfit
+)
+train_dataloader = DataLoader(
+    train_dataset, batch_size=config["training"]["batch_size"], num_workers=args.cpu_workers
+)
+
+val_dataset = VisDialDataset(
+    args.val_json, config["dataset"], overfit=args.overfit
+)
+val_dataloader = DataLoader(
+    val_dataset, batch_size=config["training"]["batch_size"], num_workers=args.cpu_workers
+)
 
 
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 # setup the model and optimizer
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 
 # let the model know vocabulary size, to declare embedding layer
-config["model"]["vocab_size"] = len(dataset.vocabulary)
+config["model"]["vocab_size"] = len(train_dataset.vocabulary)
 
 encoder = Encoder(config["model"])
 decoder = Decoder(config["model"])
@@ -118,9 +134,9 @@ print("Encoder: {}".format(config["model"]["encoder"]))
 print("Decoder: {}".format(config["model"]["decoder"]))
 
 
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 # preparation before training loop
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 
 # record starting time of training, although it is a bit earlier than actual
 train_begin = datetime.now()
@@ -138,19 +154,28 @@ os.makedirs(os.path.join(args.save_path, train_begin_str))
 shutil.copy(args.config_yml, os.path.join(args.save_path, train_begin_str))
 
 # calculate the iterations per epoch
-ipe = len(dataset) // config["training"]["batch_size"]
+if config["training"]["training_splits"] == "trainval":
+    ipe = (len(train_dataset) + len(val_dataset)) // config["training"]["batch_size"]
+else:
+    ipe = len(train_dataset) // config["training"]["batch_size"]
 print("{} iter per epoch.".format(ipe))
 
 
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 # training loop
-# ----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------
 
 encoder.train()
 decoder.train()
 running_loss = 0.0
 for epoch in range(start_epoch, config["training"]["num_epochs"] + 1):
-    for i, batch in enumerate(dataloader):
+    # combine data from train and val dataloader, if training using train + val splits
+    if config["training"]["training_splits"] == "trainval":
+        combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
+    else:
+        combined_dataloader = itertools.chain(train_dataloader)
+
+    for i, batch in enumerate(combined_dataloader):
         optimizer.zero_grad()
 
         for key in batch:
@@ -186,6 +211,25 @@ for epoch in range(start_epoch, config["training"]["num_epochs"] + 1):
                 datetime.now() - train_begin, epoch,
                     (epoch - 1) * ipe + i, running_loss,
                     optimizer.param_groups[0]["lr"]))
+
+    # ------------------------------------------------------------------------
+    # cross-validate and report automatic metrics
+    # ------------------------------------------------------------------------
+    if args.do_crossval:
+        print(f"\nCross-validation after epoch {epoch}:")
+        all_ranks = []
+        for i, batch in enumerate(tqdm(val_dataloader)):
+            for key in batch:
+                batch[key] = batch[key].to(device)
+
+            with torch.no_grad():
+                enc_out = encoder(batch)
+                dec_out = decoder(enc_out, batch)
+            ranks = scores_to_ranks(dec_out)
+            gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
+            all_ranks.append(gt_ranks)
+        all_ranks = torch.cat(all_ranks, 0)
+        process_ranks(all_ranks)
 
     # ------------------------------------------------------------------------
     # save checkpoint
