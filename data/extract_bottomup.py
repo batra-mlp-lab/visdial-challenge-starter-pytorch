@@ -1,4 +1,5 @@
 import argparse
+import glob
 import os
 
 import cv2  # must import before importing caffe2 due to bug in cv2
@@ -25,9 +26,11 @@ parser = argparse.ArgumentParser(
     description="Extract bottom-up features from a model trained by Detectron")
 parser.add_argument(
     "--image-root",
+    nargs="+",
     help="Path to a directory containing COCO/VisDial images. Note that this "
          "directory must have images, and not sub-directories of splits. "
          "Each HDF file should contain features from a single split."
+         "Multiple paths are supported to account for VisDial v1.0 train."
 )
 parser.add_argument(
     "--config",
@@ -169,9 +172,11 @@ def main(args):
     detectron_model = infer_engine.initialize_model_from_cfg(args.weights, args.gpu_id)
 
     # list of paths (example: "coco_train2014/COCO_train2014_000000123456.jpg")
-    image_paths = [os.path.join(args.image_root, name)
-                   for name in os.listdir(args.image_root)
-                   if name not in {".", ".."}]
+    image_paths = []
+    for image_root in args.image_root:
+        image_paths.extend([os.path.join(image_root, name)
+                            for name in glob.glob(os.path.join(image_root, "*.jpg"))
+                            if name not in {".", ".."}])
 
     # create an output HDF to save extracted features
     save_h5 = h5py.File(args.save_path, "w")
@@ -186,13 +191,15 @@ def main(args):
     )
 
     for idx, image_path in tqdm(enumerate(image_paths)):
-        image_ids_h5d[idx] = image_id_from_path(image_path)
+        try:
+            image_ids_h5d[idx] = image_id_from_path(image_path)
 
-        image = cv2.imread(image_path)
-        # we only care about features, not classes
-        _, _, _, bottomup_features = detect_image(detectron_model, image, args)
-        features_h5d[idx] = bottomup_features
-
+            image = cv2.imread(image_path)
+            # we only care about features, not classes
+            _, _, _, bottomup_features = detect_image(detectron_model, image, args)
+            features_h5d[idx] = bottomup_features
+        except:
+            print(f"\nWarning: features from {idx}, {image_path} failed to extract.\n")
     # set current split name in attributrs of file, for tractability
     save_h5.attrs["split"] = args.split
     save_h5.close()
