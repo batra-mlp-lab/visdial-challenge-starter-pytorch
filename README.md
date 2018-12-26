@@ -1,3 +1,11 @@
+### Maintainer's note
+
+This repository is under heavy refactor / feature improvements. The instructions in this _README_ are not up-to-date, and temporarily may not apply. If you wish to use this code for your research, please check-out [v2018.0.0 release](https://github.com/batra-mlp-lab/visdial-challenge-starter-pytorch/tree/v2018.0.0), the officially released version for VisDial challenge 2018. 
+
+A better version with updated _README_ instructions will be available around late January, 2019. Please "Watch" the repository and [subscribe for updates](https://visualdialog.org/), to be notified of updates.
+
+--------------------------------------------------------------------
+
 # Visual Dialog Challenge Starter Code
 
 PyTorch starter code for the [Visual Dialog Challenge][1].
