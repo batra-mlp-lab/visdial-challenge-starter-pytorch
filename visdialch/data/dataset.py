@@ -125,8 +125,6 @@ class VisDialDataset(Dataset):
 
         for i in range(len(sequences)):
             sequences[i] = sequences[i][: self.config["max_sequence_length"] - 1]
-            # <S> is not necessary this will be simply encoded, without generation
-            sequences[i].append(self.vocabulary.EOS_INDEX)
         sequence_lengths = [len(sequence) for sequence in sequences]
 
         # pad all sequences to max_sequence_length
@@ -147,21 +145,18 @@ class VisDialDataset(Dataset):
                      answers: List[List[int]]):
         # allow double length of caption, equivalent to a concatenated QA pair
         caption = caption[: self.config["max_sequence_length"] * 2 - 1]
-        caption.append(self.vocabulary.EOS_INDEX)
 
         for i in range(len(questions)):
             questions[i] = questions[i][: self.config["max_sequence_length"] - 1]
-            questions[i].append(self.vocabulary.EOS_INDEX)
 
         for i in range(len(answers)):
             answers[i] = answers[i][: self.config["max_sequence_length"] - 1]
-            answers[i].append(self.vocabulary.EOS_INDEX)
 
         # history for first round is caption, else concatenated QA pair of previous round
         history = []
         history.append(caption)
         for question, answer in zip(questions, answers):
-            history.append(question + answer)
+            history.append(question + answer + [self.vocabulary.EOS_INDEX])
         # drop last entry from history (there's no eleventh question)
         history = history[:-1]
         max_history_length = self.config["max_sequence_length"] * 2

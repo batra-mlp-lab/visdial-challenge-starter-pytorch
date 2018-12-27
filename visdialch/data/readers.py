@@ -69,7 +69,7 @@ class VisDialJsonReader(object):
 
             print(f"[{self._split}] Tokenizing questions...")
             for i in tqdm(range(len(self.questions))):
-                self.questions[i] = word_tokenize(self.questions[i])
+                self.questions[i] = word_tokenize(self.questions[i] + "?")
 
             print(f"[{self._split}] Tokenizing answers...")
             for i in tqdm(range(len(self.answers))):
