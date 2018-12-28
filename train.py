@@ -21,27 +21,39 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
                         help="Path to a config file listing reader, model and "
                              "optimization parameters.")
+
 parser.add_argument("--train-json", default="data/visdial_1.0_train.json",
                         help="Path to VisDial v1.0 training data.")
+
 parser.add_argument("--val-json", default="data/visdial_1.0_val.json",
                         help="Path to VisDial v1.0 training data.")
 
-parser.add_argument_group("Arguments independent of experiment reproducibility")
 
+parser.add_argument_group("Arguments independent of experiment reproducibility")
 parser.add_argument("--gpu-ids", nargs="+", type=int, default=-1,
                         help="List of ids of GPUs to use.")
+
 parser.add_argument("--cpu-workers", type=int, default=4,
                         help="Number of CPU workers for reading data.")
+
 parser.add_argument("--overfit", action="store_true",
                         help="Overfit model on 5 examples, meant for debugging.")
+
+parser.add_argument("--in-memory", action="store_true",
+                        help="Load the whole dataset and pre-extracted image features in memory "
+                             "and optimize I/O operations. Use only in presence of large RAM, "
+                             "atleast few tens of GBs.")
+
 parser.add_argument("--do-crossval", action="store_true",
                         help="Whether to perform cross-validation on val split. "
                              "Not recommended to set this flag if training is done "
                              "on train + val splits.")
 
+
 parser.add_argument_group("Checkpointing related arguments")
 parser.add_argument("--load-path", default="",
                         help="Path to load checkpoint from and continue training.")
+
 parser.add_argument("--save-path", default="checkpoints/",
                         help="Path of directory to create checkpoint directory "
                              "and save checkpoints.")
@@ -78,14 +90,14 @@ else:
 # ------------------------------------------------------------------------------------------------
 
 train_dataset = VisDialDataset(
-    args.train_json, config["dataset"], overfit=args.overfit
+    args.train_json, config["dataset"], overfit=args.overfit, in_memory=args.in_memory
 )
 train_dataloader = DataLoader(
     train_dataset, batch_size=config["training"]["batch_size"], num_workers=args.cpu_workers
 )
 
 val_dataset = VisDialDataset(
-    args.val_json, config["dataset"], overfit=args.overfit
+    args.val_json, config["dataset"], overfit=args.overfit, in_memory=args.in_memory
 )
 val_dataloader = DataLoader(
     val_dataset, batch_size=config["training"]["batch_size"], num_workers=args.cpu_workers
@@ -96,11 +108,8 @@ val_dataloader = DataLoader(
 # setup the model and optimizer
 # ------------------------------------------------------------------------------------------------
 
-# let the model know vocabulary size, to declare embedding layer
-config["model"]["vocab_size"] = len(train_dataset.vocabulary)
-
-encoder = Encoder(config["model"])
-decoder = Decoder(config["model"])
+encoder = Encoder(config["model"], train_dataset.vocabulary)
+decoder = Decoder(config["model"], train_dataset.vocabulary)
 
 # share word embedding between encoder and decoder
 decoder.word_embed = encoder.word_embed

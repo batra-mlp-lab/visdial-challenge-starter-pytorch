@@ -13,7 +13,8 @@ class VisDialDataset(Dataset):
     def __init__(self,
                  visdial_jsonpath: str,
                  config: Dict[str, Union[int, str]],
-                 overfit: bool = False):
+                 overfit: bool = False,
+                 in_memory: bool = False):
         super().__init__()
         self.config = config
         self.json_reader = VisDialJsonReader(visdial_jsonpath)
@@ -28,7 +29,7 @@ class VisDialDataset(Dataset):
         elif "test" in self.json_reader.split:
             image_features_hdfpath = config["image_features_test_h5"]
 
-        self.hdf_reader = ImageFeaturesHdfReader(image_features_hdfpath)
+        self.hdf_reader = ImageFeaturesHdfReader(image_features_hdfpath, in_memory)
 
         # keep a list of image_ids as primary keys to access data
         self.image_ids = list(self.json_reader.dialogs.keys())
@@ -47,7 +48,7 @@ class VisDialDataset(Dataset):
         image_id = self.image_ids[index]
 
         # get image features for this image_id using hdf reader
-        image_features = self.hdf_reader[image_id]["features"]
+        image_features = self.hdf_reader[image_id]
         image_features = torch.tensor(image_features)
         # normalize image features at zero-th dimension (since there's no batch dimension)
         if self.config["img_norm"]:

@@ -5,26 +5,26 @@ from visdialch.utils import DynamicRNN
 
 
 class LateFusionEncoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, vocabulary):
         super().__init__()
         self.config = config
 
         self.word_embed = nn.Embedding(
-            config["vocab_size"], config["word_embedding_size"], padding_idx=0
+            len(vocabulary), config["word_embedding_size"], padding_idx=vocabulary.PAD_INDEX
         )
         self.hist_rnn = nn.LSTM(
             config["word_embedding_size"],
             config["lstm_hidden_size"],
             config["lstm_num_layers"],
             batch_first=True,
-            dropout=config["dropout"],
+            dropout=config["dropout"]
         )
         self.ques_rnn = nn.LSTM(
             config["word_embedding_size"],
             config["lstm_hidden_size"],
             config["lstm_num_layers"],
             batch_first=True,
-            dropout=config["dropout"],
+            dropout=config["dropout"]
         )
         self.dropout = nn.Dropout(p=config["dropout"])
 
@@ -37,10 +37,7 @@ class LateFusionEncoder(nn.Module):
         fusion_size = config["img_feature_size"] + config["lstm_hidden_size"] * 2
         self.fusion = nn.Linear(fusion_size, config["lstm_hidden_size"])
 
-        if config["weight_init"] == "xavier":
-            nn.init.xavier_uniform_(self.fusion.weight)
-        elif config["weight_init"] == "kaiming":
-            nn.init.kaiming_uniform_(self.fusion.weight)
+        nn.init.kaiming_uniform_(self.fusion.weight)
         nn.init.constant_(self.fusion.bias, 0)
 
     def forward(self, batch):

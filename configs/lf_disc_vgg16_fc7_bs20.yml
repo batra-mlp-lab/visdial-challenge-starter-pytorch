@@ -21,7 +21,6 @@ model:
   lstm_hidden_size: 512
   lstm_num_layers: 2
   dropout: 0.5
-  weight_init: 'kaiming'
 
 
 # Optimization related arguments
@@ -33,5 +32,3 @@ training:
   minimum_lr: 0.00005
   training_splits: "train"  # "trainval"
 
-evaluation:
-  batch_size: 20

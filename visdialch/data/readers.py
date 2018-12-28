@@ -1,13 +1,13 @@
 """
-A Reader simply reads data from disk and returns it almost as is. Readers should be utilized by 
+A Reader simply reads data from disk and returns it almost as is, based on a "primary key", which
+for the case of VisDial v1.0 dataset, is the ``image_id``. Readers should be utilized by 
 torch ``Dataset``s. Any type of data pre-processing is not recommended in the reader, such as
 tokenizing words to integers, embedding tokens, or passing an image through a pre-trained CNN.
 
-Each Reader should be initialized by one or more file paths, and should provide access to a
-single data instance by ``image_id`` of VisDial images (implement ``__getitem__``).
-
-Note: I should have made a base Reader class and let these two extend it, but this way they are
-independent and fit to be copy-pasted in some other codebase. :) 
+Each reader must atleast implement three methods:
+    - ``__len__`` to return the length of data this Reader can read.
+    - ``__getitem__`` to return data based on ``image_id`` in VisDial v1.0 dataset.
+    - ``keys`` to return a list of possible ``image_id``s this Reader can provide data of. 
 """
 
 import copy
@@ -15,7 +15,7 @@ import json
 from typing import Dict, List, Union
 
 import h5py
-# a bit slow, and just splits sentences to list of words, can be doable in the reader
+# a bit slow, and just splits sentences to list of words, can be doable in VisDialJsonReader
 from nltk.tokenize import word_tokenize
 from tqdm import tqdm
 
@@ -47,6 +47,7 @@ class VisDialJsonReader(object):
             self.captions = {}
             self.dialogs = {}
             self.num_rounds = {}
+
             for dialog_for_image in visdial_data["data"]["dialogs"]:
                 self.captions[dialog_for_image["image_id"]] = dialog_for_image["caption"]
 
@@ -101,6 +102,9 @@ class VisDialJsonReader(object):
             "num_rounds": num_rounds
         }
 
+    def keys(self) -> List[int]:
+        return list(self.dialogs.keys())
+
     @property
     def split(self):
         return self._split
@@ -108,9 +112,8 @@ class VisDialJsonReader(object):
 
 class ImageFeaturesHdfReader(object):
     """
-    A reader for generic HDF files with non-nested groups. Here it serves the purpose of reading
-    pre-trained image features. A typical HDF file is expected to have a column of primary key
-    ("image_id") and one or more columns containing image features.
+    A reader for HDF files containing pre-extracted image features. A typical HDF file is expected
+    to have a column named "image_id", and another column named "features".
 
     Example of an HDF file:
     ```
@@ -125,31 +128,45 @@ class ImageFeaturesHdfReader(object):
     ----------
     features_hdfpath : str
         Path to an HDF file containing VisDial v1.0 train, val or test split image features.
-    primary_key : str, optional (default = "image_id")
-        Name of column in HDF holding the primary key, named "image_id" in all provided
-        pre-extracted feature files.
+    in_memory : bool
+        Whether to load the whole HDF file in memory. Beware, these files are sometimes tens of GBs
+        in size. Set this to true if you have sufficient RAM - trade-off between speed and memory.
     """
 
-    def __init__(self,
-                 features_hdfpath: str,
-                 primary_key: str = "image_id"):
+    def __init__(self, features_hdfpath: str, in_memory: bool = False):
         self.features_hdfpath = features_hdfpath
+        self._in_memory = in_memory
+
         with h5py.File(self.features_hdfpath, "r") as features_hdf:
-            self.features_hdfkeys = list(features_hdf.keys())
-            self.primary_key_list = list(features_hdf[primary_key])
             self._split = features_hdf.attrs["split"]
+            self.image_id_list = list(features_hdf["image_id"])
+            # "features" is List[np.ndarray] if the dataset is loaded in-memory
+            # if not loaded in memory, then list of None
+            self.features = [None] * len(self.image_id_list)
+
 
     def __len__(self):
-        return len(self.primary_key_list)
+        return len(self.image_id_list)
 
-    def __getitem__(self, primary_key):
-        features_hdf = h5py.File(self.features_hdfpath, "r")
-        index = self.primary_key_list.index(primary_key)
-        item = {}
-        with h5py.File(self.features_hdfpath, "r") as features_hdf:
-            for key in self.features_hdfkeys:
-                item[key] = features_hdf[key][index]
-        return item
+    def __getitem__(self, image_id: int):
+        index = self.image_id_list.index(image_id)
+        if self._in_memory:
+            # load features during first epoch, all not loaded together as it has a slow start
+            if self.features[index] is not None:
+                image_id_features = self.features[index]
+            else:
+                with h5py.File(self.features_hdfpath, "r") as features_hdf:
+                    image_id_features = features_hdf["features"][index]
+                    self.features[index] = image_id_features
+        else:
+            # read chunk from file everytime if not loaded in memory
+            with h5py.File(self.features_hdfpath, "r") as features_hdf:
+                image_id_features = features_hdf["features"][index]
+
+        return image_id_features
+
+    def keys(self) -> List[int]:
+        return self.image_id_list
 
     @property
     def split(self):

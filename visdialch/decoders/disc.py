@@ -5,13 +5,13 @@ from visdialch.utils import DynamicRNN
 
 
 class DiscriminativeDecoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, vocabulary):
         super().__init__()
         self.config = config
 
-        self.word_embed = nn.Embedding(config["vocab_size"],
+        self.word_embed = nn.Embedding(len(vocabulary),
                                        config["word_embedding_size"],
-                                       padding_idx=0)
+                                       padding_idx=vocabulary.PAD_INDEX)
         self.option_rnn = nn.LSTM(config["word_embedding_size"],
                                   config["lstm_hidden_size"],
                                   batch_first=True)
