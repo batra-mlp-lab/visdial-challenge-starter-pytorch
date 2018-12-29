@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 import shutil
 import subprocess
-from typing import Tuple, Type
+from typing import Optional, Tuple, Type
 import warnings
 
 import torch
@@ -43,7 +43,7 @@ def create_checkpoint_dir(save_dirpath: str, config_ymlpath: str) -> str:
     )
     commit_sha, _ = commit_sha_subprocess.communicate()
     with open(os.path.join(checkpoint_dirpath, "commit_sha.txt"), "w") as commit_sha_file:
-        commit_sha_file.write(commit_sha.decode("utf-8"))
+        commit_sha_file.write(commit_sha.decode("utf-8").strip().replace("\n", ""))
     return checkpoint_dirpath
 
 
@@ -81,7 +81,7 @@ def load_checkpoint(checkpoint_dirpath: str,
                     epoch: int,
                     encoder: Type[nn.Module],
                     decoder: Type[nn.Module],
-                    optimizer: Type[optim.Optimizer]
+                    optimizer: Optional[optim.Optimizer] = None
                     ) -> Tuple[nn.Module, nn.Module, optim.Optimizer]:
     """
     Given a path to directory containing saved checkpoints and epoch number, load corresponding
@@ -109,7 +109,7 @@ def load_checkpoint(checkpoint_dirpath: str,
         ["git", "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     current_commit_sha, _ = current_commit_sha_subprocess.communicate()
-    current_commit_sha = current_commit_sha.decode("utf-8")
+    current_commit_sha = current_commit_sha.decode("utf-8").strip().replace("\n", "")
 
     with open(os.path.join(checkpoint_dirpath, "commit_sha.txt"), "r") as commit_sha_file:
         checkpoint_commit_sha = commit_sha_file.read().strip().replace("\n", "")
@@ -128,5 +128,6 @@ def load_checkpoint(checkpoint_dirpath: str,
     components = torch.load(checkpoint_pthpath)
     encoder.module.load_state_dict(components["encoder"])
     decoder.module.load_state_dict(components["decoder"])
-    optimizer.load_state_dict(components["optimizer"])
+    if optimizer is not None:
+        optimizer.load_state_dict(components["optimizer"])
     return encoder, decoder, optimizer
