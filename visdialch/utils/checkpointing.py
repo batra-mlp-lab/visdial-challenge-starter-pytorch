@@ -10,6 +10,25 @@ from torch import nn, optim
 
 
 def create_checkpoint_dir(save_dirpath: str, config_ymlpath: str) -> str:
+    """
+    Given a directory path, creates a sub-directory based on timestamp, and copies over
+    config of current experiemnt in that sub-directory, to associate checkpoints with their
+    respective config. Moreover, records current commit SHA in a text file.
+
+    Parameters
+    ----------
+    save_dirpath: str
+        Path to directory to save checkpoints into (a sub-directory). Check ``--save-dirpath``
+        argument in ``train.py``.
+    config_ymlpath: str
+        Path to yml config file. Check ``--config-yml`` argument in ``train.py``.
+
+    Returns
+    -------
+    str
+        Path to the sub-directory based on timestamp.
+    """
+
     # create a fresh directory based on timestamp, inside save_dirpath
     save_datetime = datetime.strftime(datetime.now(), "%d-%b-%Y-%H:%M:%S")
     checkpoint_dirpath = os.path.join(save_dirpath, save_datetime)
@@ -28,12 +47,63 @@ def create_checkpoint_dir(save_dirpath: str, config_ymlpath: str) -> str:
     return checkpoint_dirpath
 
 
+def save_checkpoint(checkpoint_dirpath: str,
+                    epoch: int,
+                    encoder: Type[nn.Module],
+                    decoder: Type[nn.Module],
+                    optimizer: Type[optim.Optimizer]) -> None:
+    """
+    Given a path to checkpoint saving directory (the one named by timestamp) and epoch number,
+    save state dicts of encoder, decoder and optimizer to a .pth file.
+
+    Parameters
+    ----------
+    checkpoint_dirpath: str
+        Path to checkpoint saving directory (as created by ``create_checkpoint_dir``).
+    epoch: int
+        Epoch number after which checkpoint is being saved.
+    encoder: Type[nn.Module]
+    decoder: Type[nn.Module]
+    optimizer: Type[optim.Optimizer]
+    """
+
+    torch.save(
+        {
+            "encoder": encoder.module.state_dict(),
+            "decoder": decoder.module.state_dict(),
+            "optimizer": optimizer.state_dict(),
+        },
+        os.path.join(checkpoint_dirpath, f"model_epoch_{epoch}.pth"),
+    )
+
+
 def load_checkpoint(checkpoint_dirpath: str,
                     epoch: int,
                     encoder: Type[nn.Module],
                     decoder: Type[nn.Module],
                     optimizer: Type[optim.Optimizer]
                     ) -> Tuple[nn.Module, nn.Module, optim.Optimizer]:
+    """
+    Given a path to directory containing saved checkpoints and epoch number, load corresponding
+    checkpoint. This method checks if current commit SHA of code matches the commit SHA recorded
+    when this checkpoint was saved - raises a warning if they don't match.
+
+    Parameters
+    ----------
+    checkpoint_dirpath: str
+        Path to directory containing saved checkpoints (as created by ``create_checkpoint_dir``).
+    epoch: int
+        Epoch number for which checkpoint is to be loaded.
+    encoder: Type[nn.Module]
+    decoder: Type[nn.Module]
+    optimizer: Type[optim.Optimizer]
+
+    Returns
+    -------
+    Tuple[nn.Module, nn.Module, optim.Optimizer]
+        encoder, decoder, optimizer with loaded parameters from checkpoint.
+    """
+
     # verify commit sha, raise warning if it doesn't match
     current_commit_sha_subprocess = subprocess.Popen(
         ["git", "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -60,18 +130,3 @@ def load_checkpoint(checkpoint_dirpath: str,
     decoder.module.load_state_dict(components["decoder"])
     optimizer.load_state_dict(components["optimizer"])
     return encoder, decoder, optimizer
-
-
-def save_checkpoint(checkpoint_dirpath: str,
-                    epoch: int,
-                    encoder: Type[nn.Module],
-                    decoder: Type[nn.Module],
-                    optimizer: Type[optim.Optimizer]) -> None:
-    torch.save(
-        {
-            "encoder": encoder.module.state_dict(),
-            "decoder": decoder.module.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        },
-        os.path.join(checkpoint_dirpath, f"model_epoch_{epoch}.pth"),
-    )
