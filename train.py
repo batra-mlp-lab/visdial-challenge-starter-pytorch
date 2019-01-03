@@ -13,8 +13,9 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
+from visdialch.model import EncoderDecoderModel
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
-import visdialch.utils.checkpointing as checkpointing_utils
+from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 
 parser = argparse.ArgumentParser()
@@ -34,7 +35,7 @@ parser.add_argument(
 
 parser.add_argument_group("Arguments independent of experiment reproducibility")
 parser.add_argument(
-    "--gpu-ids", nargs="+", type=int, default=-1,
+    "--gpu-ids", nargs="+", type=int, default=0,
     help="List of ids of GPUs to use."
 )
 parser.add_argument(
@@ -46,8 +47,8 @@ parser.add_argument(
     help="Overfit model on 5 examples, meant for debugging."
 )
 parser.add_argument(
-    "--do-crossval", action="store_true",
-    help="Whether to perform cross-validation."
+    "--validate", action="store_true",
+    help="Whether to validate on val split after every epoch."
 )
 parser.add_argument(
     "--in-memory", action="store_true",
@@ -91,7 +92,7 @@ for arg in vars(args):
 
 
 # ================================================================================================
-#   SETUP DATASET, DATALOADER
+#   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, CHECKPOINT MANAGER
 # ================================================================================================
 
 train_dataset = VisDialDataset(args.train_json, config["dataset"], args.overfit, args.in_memory)
@@ -104,54 +105,45 @@ val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
 
-
-# ================================================================================================
-#   SETUP MODEL, CRITERION, OPTIMIZER
-# ================================================================================================
-
 # pass vocabulary to construct nn.Embedding
-encoder = Encoder(config["model"], train_dataset.vocabulary).to(device)
-decoder = Decoder(config["model"], train_dataset.vocabulary).to(device)
+encoder = Encoder(config["model"], train_dataset.vocabulary)
+decoder = Decoder(config["model"], train_dataset.vocabulary)
+print("Encoder: {}".format(config["model"]["encoder"]))
+print("Decoder: {}".format(config["model"]["decoder"]))
 
 # share word embedding between encoder and decoder
 decoder.word_embed = encoder.word_embed
 
-# wrap around DataParallel to support multi-GPU execution
-encoder = nn.DataParallel(encoder, args.gpu_ids)
-decoder = nn.DataParallel(decoder, args.gpu_ids)
-print("Encoder: {}".format(config["model"]["encoder"]))
-print("Decoder: {}".format(config["model"]["decoder"]))
+# wrap encoder and decoder in a model
+model = EncoderDecoderModel(encoder, decoder).to(device)
+if -1 not in args.gpu_ids:
+    model = nn.DataParallel(model, args.gpu_ids)
 
-# declare criterion, optimizer and learning rate scheduler
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(
-    list(encoder.parameters()) + list(decoder.parameters()), lr=config["solver"]["initial_lr"]
-)
-scheduler = lr_scheduler.StepLR(
-    optimizer, step_size=1, gamma=config["solver"]["lr_gamma"]
-)
+optimizer = optim.Adam(model.parameters(), lr=config["solver"]["initial_lr"])
+scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["lr_gamma"])
+
+checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, config=config)
 
 
 # ================================================================================================
 #   SETUP BEFORE TRAINING LOOP
 # ================================================================================================
 
-# create fresh checkpoint directory for this run
-checkpoint_dirpath = checkpointing_utils.create_checkpoint_dir(args.save_dirpath, args.config_yml)
-print(f"Saving checkpoints at: {checkpoint_dirpath}")
-
 # if loading from checkpoint, adjust start epoch and load parameters
 if args.load_pthpath == "":
-    start_epoch = 1
+    start_epoch = 0
 else:
-    # "path/to/model_epoch_xx.pth" -> xx
-    load_epoch = int(args.load_pthpath.split("_")[-1][:-4])
+    # "path/to/checkpoint_xx.pth" -> xx
+    start_epoch = int(args.load_pthpath.split("_")[-1][:-4])
 
-    encoder, decoder, optimizer = checkpointing_utils.load_checkpoint(
-        os.path.dirname(args.load_pthpath), load_epoch, encoder, decoder, optimizer
-    )
+    model_state_dict, optimizer_state_dict = load_checkpoint(args.load_pthpath)
+    if isinstance(model, nn.DataParallel):
+        model.module.load_state_dict(model_state_dict)
+    else:
+        model.load_state_dict(model_state_dict)
+    optimizer.load_state_dict(optimizer_state_dict)
     print("Loaded model from {}".format(args.load_pthpath))
-    start_epoch = load_epoch + 1
 
 
 # ================================================================================================
@@ -184,9 +176,8 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         #   ITERATION: FORWARD - BACKWARD - STEP
         # ----------------------------------------------------------------------------------------
         optimizer.zero_grad()
-        encoder_output = encoder(batch)
-        decoder_output = decoder(encoder_output, batch)
-        batch_loss = criterion(decoder_output, batch["ans_ind"].view(-1))
+        output = model(batch)
+        batch_loss = criterion(output, batch["ans_ind"].view(-1))
         batch_loss.backward()
         optimizer.step()
 
@@ -204,29 +195,28 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         if i % 100 == 0:
             # print current time, epoch, iteration, running loss, learning rate
             print("[{}][Epoch: {:3d}][Iter: {:6d}][Loss: {:6f}][lr: {:7f}]".format(
-                    datetime.now() - train_begin, epoch, (epoch - 1) * iterations + i,
+                    datetime.now() - train_begin, epoch, i,
                     running_loss, optimizer.param_groups[0]["lr"]
                 )
             )
 
     # --------------------------------------------------------------------------------------------
-    #   ON EPOCH END  (checkpointing and cross-validation)
+    #   ON EPOCH END  (checkpointing and validation)
     # --------------------------------------------------------------------------------------------
-    checkpointing_utils.save_checkpoint(checkpoint_dirpath, epoch, encoder, decoder, optimizer)
+    checkpoint_manager.step()
 
-    # cross-validate and report automatic metrics
-    if args.do_crossval:
-        print(f"Cross-validation after epoch {epoch}:")
+    # validate and report automatic metrics
+    if args.validate:
+        print(f"Validation after epoch {epoch}:")
         all_ranks = []
         for i, batch in enumerate(tqdm(val_dataloader)):
             for key in batch:
                 batch[key] = batch[key].to(device)
-
             with torch.no_grad():
-                encoder_output = encoder(batch)
-                decoder_output = decoder(encoder_output, batch)
-            ranks = scores_to_ranks(decoder_output)
+                output = model(batch)
+            ranks = scores_to_ranks(output)
             gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
             all_ranks.append(gt_ranks)
         all_ranks = torch.cat(all_ranks, 0)
         process_ranks(all_ranks)
+

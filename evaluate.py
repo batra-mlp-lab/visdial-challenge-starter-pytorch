@@ -12,13 +12,14 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
+from visdialch.model import EncoderDecoderModel
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
-import visdialch.utils.checkpointing as checkpointing_utils
+from visdialch.utils.checkpointing import load_checkpoint
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
+    "--config-yml", default="configs/lf_disc_vgg16_fc7_bs32.yml",
     help="Path to a config file listing reader, model and optimization parameters."
 )
 parser.add_argument(
@@ -28,7 +29,7 @@ parser.add_argument(
 
 parser.add_argument_group("Evaluation related arguments")
 parser.add_argument(
-    "--load-pthpath", default="checkpoints/dd-mmm-yyyy-hh:mm:ss/model_epoch_xx.pth",
+    "--load-pthpath", default="checkpoints/checkpoint_xx.pth",
     help="Path to .pth file of pretrained checkpoint."
 )
 parser.add_argument(
@@ -70,6 +71,7 @@ args = parser.parse_args()
 
 # keys: {"dataset", "model", "solver"}
 config = yaml.load(open(args.config_yml))
+if type(args.gpu_ids) == int: args.gpu_ids = [args.gpu_ids]
 device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
 
 # print config and args
@@ -79,7 +81,7 @@ for arg in vars(args):
 
 
 # ================================================================================================
-#   SETUP DATASET, DATALOADER
+#   SETUP DATASET, DATALOADER, MODEL
 # ================================================================================================
 
 val_dataset = VisDialDataset(args.eval_json, config["dataset"], args.overfit)
@@ -91,28 +93,26 @@ if args.use_gt and "test" in dataset.split:
     print("Warning: No ground truth for test split, changing use_gt to False.")
     args.use_gt = False
 
-
-# ================================================================================================
-#   SETUP MODEL
-# ================================================================================================
-
 # pass vocabulary to construct nn.Embedding
-encoder = Encoder(config["model"], val_dataset.vocabulary).to(device)
-decoder = Decoder(config["model"], val_dataset.vocabulary).to(device)
-
-# wrap around DataParallel to support multi-GPU execution
-encoder = nn.DataParallel(encoder, args.gpu_ids)
-decoder = nn.DataParallel(decoder, args.gpu_ids)
-
-# "path/to/model_epoch_xx.pth" -> xx
-load_epoch = int(args.load_pthpath.split("_")[-1][:-4])
-encoder, decoder, _ = checkpointing_utils.load_checkpoint(
-    os.path.dirname(args.load_pthpath), load_epoch, encoder, decoder
-)
-print("Loaded model from {}".format(args.load_pthpath))
+encoder = Encoder(config["model"], val_dataset.vocabulary)
+decoder = Decoder(config["model"], val_dataset.vocabulary)
 print("Encoder: {}".format(config["model"]["encoder"]))
 print("Decoder: {}".format(config["model"]["decoder"]))
 
+# share word embedding between encoder and decoder
+decoder.word_embed = encoder.word_embed
+
+# wrap encoder and decoder in a model
+model = EncoderDecoderModel(encoder, decoder).to(device)
+if -1 not in args.gpu_ids:
+    model = nn.DataParallel(model, args.gpu_ids)
+
+model_state_dict, _ = load_checkpoint(args.load_pthpath)
+if isinstance(model, nn.DataParallel):
+    model.module.load_state_dict(model_state_dict)
+else:
+    model.load_state_dict(model_state_dict)
+print("Loaded model from {}".format(args.load_pthpath))
 
 # ================================================================================================
 #   EVALUATION LOOP
@@ -128,13 +128,10 @@ if args.use_gt:
     all_ranks = []
     for i, batch in enumerate(tqdm(val_dataloader)):
         for key in batch:
-            if not isinstance(batch[key], list):
-                batch[key] = batch[key].to(device)
-
+            batch[key] = batch[key].to(device)
         with torch.no_grad():
-            encoder_output = encoder(batch)
-            decoder_output = decoder(encoder_output, batch)
-        ranks = scores_to_ranks(decoder_output)
+            output = model(batch)
+        ranks = scores_to_ranks(output)
         gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
         all_ranks.append(gt_ranks)
     all_ranks = torch.cat(all_ranks, 0)
@@ -146,13 +143,10 @@ else:
     ranks_json = []
     for i, batch in enumerate(tqdm(val_dataloader)):
         for key in batch:
-            if not isinstance(batch[key], list):
-                batch[key] = batch[key].to(device)
-
+            batch[key] = batch[key].to(device)
         with torch.no_grad():
-            encoder_output = encoder(batch)
-            decoder_output = decoder(encoder_output, batch)
-        ranks = scores_to_ranks(decoder_output)
+                output = model(batch)
+        ranks = scores_to_ranks(output)
         ranks = ranks.view(-1, 10, 100)
 
         for i in range(len(batch["img_ids"])):

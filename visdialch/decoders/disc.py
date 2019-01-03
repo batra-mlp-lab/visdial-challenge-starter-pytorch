@@ -15,7 +15,6 @@ class DiscriminativeDecoder(nn.Module):
         self.option_rnn = nn.LSTM(config["word_embedding_size"],
                                   config["lstm_hidden_size"],
                                   batch_first=True)
-        self.log_softmax = nn.LogSoftmax(dim=1)
 
         # options are variable length padded sequences, use DynamicRNN
         self.option_rnn = DynamicRNN(self.option_rnn)
@@ -50,6 +49,4 @@ class DiscriminativeDecoder(nn.Module):
             scores.append(torch.sum(opt_embed * enc_out, 1))
 
         # return scores
-        scores = torch.stack(scores, 1)
-        log_probs = self.log_softmax(scores)
-        return log_probs
+        return torch.stack(scores, 1)

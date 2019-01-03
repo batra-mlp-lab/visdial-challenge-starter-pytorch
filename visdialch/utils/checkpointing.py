@@ -1,133 +1,170 @@
-from datetime import datetime
-import os
-import shutil
-import subprocess
-from typing import Optional, Tuple, Type
+"""
+A checkpoint manager periodically saves model and optimizer as .pth
+files during training.
+
+Checkpoint managers help with experiment reproducibility, they record
+the commit SHA of your current codebase in the checkpoint saving
+directory. While loading any checkpoint from other commit, they raise a
+friendly warning, a signal to inspect commit diffs for potential bugs.
+Moreover, they copy experiment hyper-parameters as a YAML config in
+this directory.
+
+That said, always run your experiments after committing your changes,
+this doesn't account for untracked or staged, but uncommitted changes.
+"""
+import copy
+from pathlib import Path
+from subprocess import PIPE, Popen
 import warnings
 
 import torch
 from torch import nn, optim
+import yaml
 
 
-def create_checkpoint_dir(save_dirpath: str, config_ymlpath: str) -> str:
-    """
-    Given a directory path, creates a sub-directory based on timestamp, and copies over
-    config of current experiemnt in that sub-directory, to associate checkpoints with their
-    respective config. Moreover, records current commit SHA in a text file.
+class CheckpointManager(object):
+    """A checkpoint manager saves state dicts of model and optimizer
+    as .pth files in a specified directory. This class closely follows
+    the API of PyTorch optimizers and learning rate schedulers.
 
-    Parameters
-    ----------
-    save_dirpath: str
-        Path to directory to save checkpoints into (a sub-directory). Check ``--save-dirpath``
-        argument in ``train.py``.
-    config_ymlpath: str
-        Path to yml config file. Check ``--config-yml`` argument in ``train.py``.
-
-    Returns
-    -------
-    str
-        Path to the sub-directory based on timestamp.
-    """
-
-    # create a fresh directory based on timestamp, inside save_dirpath
-    save_datetime = datetime.strftime(datetime.now(), "%d-%b-%Y-%H:%M:%S")
-    checkpoint_dirpath = os.path.join(save_dirpath, save_datetime)
-    os.makedirs(checkpoint_dirpath)
-
-    # copy over currently used config file inside this directory
-    shutil.copy(config_ymlpath, checkpoint_dirpath)
-
-    # save current git commit hash in this checkpoint directory
-    commit_sha_subprocess = subprocess.Popen(
-        ["git", "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    commit_sha, _ = commit_sha_subprocess.communicate()
-    with open(os.path.join(checkpoint_dirpath, "commit_sha.txt"), "w") as commit_sha_file:
-        commit_sha_file.write(commit_sha.decode("utf-8").strip().replace("\n", ""))
-    return checkpoint_dirpath
-
-
-def save_checkpoint(checkpoint_dirpath: str,
-                    epoch: int,
-                    encoder: Type[nn.Module],
-                    decoder: Type[nn.Module],
-                    optimizer: Type[optim.Optimizer]) -> None:
-    """
-    Given a path to checkpoint saving directory (the one named by timestamp) and epoch number,
-    save state dicts of encoder, decoder and optimizer to a .pth file.
+    Note::
+        For ``DataParallel`` modules, ``model.module.state_dict()`` is
+        saved, instead of ``model.state_dict()``.
 
     Parameters
     ----------
+    model: nn.Module
+        Wrapped model, which needs to be checkpointed.
+    optimizer: optim.Optimizer
+        Wrapped optimizer which needs to be checkpointed.
     checkpoint_dirpath: str
-        Path to checkpoint saving directory (as created by ``create_checkpoint_dir``).
-    epoch: int
-        Epoch number after which checkpoint is being saved.
-    encoder: Type[nn.Module]
-    decoder: Type[nn.Module]
-    optimizer: Type[optim.Optimizer]
+        Path to an empty or non-existent directory to save checkpoints.
+    step_size: int, optional (default=1)
+        Period of saving checkpoints.
+    last_epoch: int, optional (default=-1)
+        The index of last epoch.
+
+    Example
+    --------
+    >>> model = torch.nn.Linear(10, 2)
+    >>> optimizer = torch.optim.Adam(model.parameters())
+    >>> ckpt_manager = CheckpointManager(model, optimizer, "/tmp/ckpt")
+    >>> for epoch in range(20):
+    ...     for batch in dataloader:
+    ...         do_iteration(batch)
+    ...     ckpt_manager.step()
     """
 
-    torch.save(
-        {
-            "encoder": encoder.module.state_dict(),
-            "decoder": decoder.module.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        },
-        os.path.join(checkpoint_dirpath, f"model_epoch_{epoch}.pth"),
-    )
+    def __init__(self, model, optimizer, checkpoint_dirpath, step_size=1,
+                 last_epoch=-1, **kwargs):
 
+        if not isinstance(model, nn.Module):
+            raise TypeError("{} is not a Module".format(
+                type(model).__name__))
 
-def load_checkpoint(checkpoint_dirpath: str,
-                    epoch: int,
-                    encoder: Type[nn.Module],
-                    decoder: Type[nn.Module],
-                    optimizer: Optional[optim.Optimizer] = None
-                    ) -> Tuple[nn.Module, nn.Module, optim.Optimizer]:
-    """
-    Given a path to directory containing saved checkpoints and epoch number, load corresponding
-    checkpoint. This method checks if current commit SHA of code matches the commit SHA recorded
-    when this checkpoint was saved - raises a warning if they don't match.
+        if not isinstance(optimizer, optim.Optimizer):
+            raise TypeError("{} is not an Optimizer".format(
+                type(optimizer).__name__))
 
-    Parameters
-    ----------
-    checkpoint_dirpath: str
-        Path to directory containing saved checkpoints (as created by ``create_checkpoint_dir``).
-    epoch: int
-        Epoch number for which checkpoint is to be loaded.
-    encoder: Type[nn.Module]
-    decoder: Type[nn.Module]
-    optimizer: Type[optim.Optimizer]
+        self.model = model
+        self.optimizer = optimizer
+        self.ckpt_dirpath = Path(checkpoint_dirpath)
+        self.step_size = step_size
+        self.last_epoch = last_epoch
+        self.init_directory(**kwargs)
 
-    Returns
-    -------
-    Tuple[nn.Module, nn.Module, optim.Optimizer]
-        encoder, decoder, optimizer with loaded parameters from checkpoint.
-    """
+    def init_directory(self, config={}):
+        """Initialize empty checkpoint directory and record commit SHA
+        in it. Also save hyper-parameters config in this directory to
+        associate checkpoints with their hyper-parameters.
+        """
 
-    # verify commit sha, raise warning if it doesn't match
-    current_commit_sha_subprocess = subprocess.Popen(
-        ["git", "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    current_commit_sha, _ = current_commit_sha_subprocess.communicate()
-    current_commit_sha = current_commit_sha.decode("utf-8").strip().replace("\n", "")
-
-    with open(os.path.join(checkpoint_dirpath, "commit_sha.txt"), "r") as commit_sha_file:
-        checkpoint_commit_sha = commit_sha_file.read().strip().replace("\n", "")
-
-    if current_commit_sha != checkpoint_commit_sha:
-        warnings.warn(
-            f"Current commit ({current_commit_sha}) and the commit "
-            f"({checkpoint_commit_sha}) from which checkpoint was saved,"
-            " are different. This might affect reproducibility and results."
+        self.ckpt_dirpath.mkdir(parents=True, exist_ok=True)
+        # save current git commit hash in this checkpoint directory
+        commit_sha_subprocess = Popen(
+            ["git", "rev-parse", "--short", "HEAD"], stdout=PIPE, stderr=PIPE
+        )
+        commit_sha, _ = commit_sha_subprocess.communicate()
+        commit_sha = commit_sha.decode("utf-8").strip().replace("\n", "")
+        commit_sha_filepath = self.ckpt_dirpath / f".commit-{commit_sha}"
+        commit_sha_filepath.touch()
+        yaml.dump(
+            config, open(str(self.ckpt_dirpath / "config.yml"), "w"),
+            default_flow_style=False
         )
 
-    # derive checkpoint name / path from the epoch number
-    checkpoint_pthpath = os.path.join(checkpoint_dirpath, f"model_epoch_{epoch}.pth")
+    def step(self, epoch=None):
+        """Save checkpoint if step size conditions meet. """
+
+        if not epoch:
+            epoch = self.last_epoch + 1
+        self.last_epoch = epoch
+
+        if not self.last_epoch % self.step_size:
+            torch.save(
+                {
+                    "model": self._model_state_dict(),
+                    "optimizer": self.optimizer.state_dict()
+                },
+                self.ckpt_dirpath / f"checkpoint_{self.last_epoch}.pth",
+            )
+
+    def _model_state_dict(self):
+        """Returns state dict of model, taking care of DataParallel case."""
+        if isinstance(self.model, nn.DataParallel):
+            return self.model.module.state_dict()
+        else:
+            return self.model.state_dict()
+
+
+def load_checkpoint(checkpoint_pthpath):
+    """Given a path to saved checkpoint, load corresponding state dicts
+    of model and optimizer from it. This method checks if the current
+    commit SHA of codebase matches the commit SHA recorded when this
+    checkpoint was saved by checkpoint manager.
+
+    Parameters
+    ----------
+    checkpoint_pthpath: str or pathlib.Path
+        Path to saved checkpoint (as created by ``CheckpointManager``).
+
+    Returns
+    -------
+    nn.Module, optim.Optimizer
+        Model and optimizer state dicts loaded from checkpoint.
+
+    Raises
+    ------
+    UserWarning
+        If commit SHA do not match, or if the directory doesn't have
+        the recorded commit SHA.
+    """
+
+    if isinstance(checkpoint_pthpath, str):
+        checkpoint_pthpath = Path(checkpoint_pthpath)
+    checkpoint_dirpath = checkpoint_pthpath.resolve().parent
+    checkpoint_commit_sha = list(checkpoint_dirpath.glob(".commit-*"))
+
+    if len(checkpoint_commit_sha) == 0:
+        raise UserWarning("Commit SHA was not recorded while saving checkpoints.")
+    else:
+        # verify commit sha, raise warning if it doesn't match
+        commit_sha_subprocess = Popen(
+            ["git", "rev-parse", "--short", "HEAD"], stdout=PIPE, stderr=PIPE
+        )
+        commit_sha, _ = commit_sha_subprocess.communicate()
+        commit_sha = commit_sha.decode("utf-8").strip().replace("\n", "")
+
+        # remove ".commit-"
+        checkpoint_commit_sha = checkpoint_commit_sha[0].name[8:]
+
+        if commit_sha != checkpoint_commit_sha:
+            warnings.warn(
+                f"Current commit ({commit_sha}) and the commit "
+                f"({checkpoint_commit_sha}) at which checkpoint was saved,"
+                " are different. This might affect reproducibility."
+            )
 
     # load encoder, decoder, optimizer state_dicts
     components = torch.load(checkpoint_pthpath)
-    encoder.module.load_state_dict(components["encoder"])
-    decoder.module.load_state_dict(components["decoder"])
-    if optimizer is not None:
-        optimizer.load_state_dict(components["optimizer"])
-    return encoder, decoder, optimizer
+    return components["model"], components["optimizer"]
