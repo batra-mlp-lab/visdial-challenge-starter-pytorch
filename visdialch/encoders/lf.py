@@ -41,19 +41,19 @@ class LateFusionEncoder(nn.Module):
         nn.init.constant_(self.fusion.bias, 0)
 
     def forward(self, batch):
-        # shape: (batch, img_feature_size) - CNN fc7 features
-        # shape: (batch, num_proposals, img_feature_size) - RCNN bottom-up features
+        # shape: (batch_size, img_feature_size) - CNN fc7 features
+        # shape: (batch_size, num_proposals, img_feature_size) - RCNN bottom-up features
         img = batch["img_feat"]
-        # shape: (batch, 10, max_sequence_length)
+        # shape: (batch_size, 10, max_sequence_length)
         ques = batch["ques"]
-        # shape: (batch, 10, max_sequence_length * 2 * 10), concatenated qa * 10 rounds
+        # shape: (batch_size, 10, max_sequence_length * 2 * 10), concatenated qa * 10 rounds
         hist = batch["hist"]
         # num_rounds = 10, even for test split (padded dialog rounds at the end)
         batch_size, num_rounds, max_sequence_length = ques.size()
 
         # average bottom-up features of all proposals, to form fc7-like features
         if img.dim() == 3:
-            img = torch.mean(img, dim=1)  # shape: (batch, img_feature_size)
+            img = torch.mean(img, dim=1)  # shape: (batch_size, img_feature_size)
 
         # repeat image feature vectors to be provided for every round
         img = img.view(batch_size, 1, self.config["img_feature_size"])
@@ -74,5 +74,6 @@ class LateFusionEncoder(nn.Module):
         fused_vector = self.dropout(fused_vector)
 
         fused_embedding = torch.tanh(self.fusion(fused_vector))
+        # shape: (batch_size, num_rounds, lstm_hidden_size)
         fused_embedding = fused_embedding.view(batch_size, num_rounds, -1)
         return fused_embedding

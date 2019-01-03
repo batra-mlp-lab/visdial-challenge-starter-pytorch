@@ -19,34 +19,42 @@ class DiscriminativeDecoder(nn.Module):
         # options are variable length padded sequences, use DynamicRNN
         self.option_rnn = DynamicRNN(self.option_rnn)
 
-    def forward(self, enc_out, batch):
-        """Given encoder output `enc_out` and candidate output option sequences,
-        predict a score for each output sequence.
+    def forward(self, encoder_output, batch):
+        """Given `encoder_output` and candidate option sequences, predict a score
+        for each option sequence.
 
         Arguments
         ---------
-        enc_out : torch.autograd.Variable
-            Output from the encoder through its forward pass. (b, rnn_hidden_size)
+        encoder_output: torch.Tensor
+            Output from the encoder through its forward pass.
+            (batch_size, num_rounds, lstm_hidden_size)
         """
+
         options = batch['opt']
-        options_len = batch['opt_len']
+        batch_size, num_rounds, num_options, max_sequence_length = options.size()
+        options = options.view(batch_size * num_rounds * num_options, max_sequence_length)
 
-        # word embed options
-        batch_size, num_rounds, num_options, max_opt_len = options.size()
-        options = options.view(batch_size * num_rounds, num_options * max_opt_len)
-        options_len = options_len.view(batch_size * num_rounds, num_options)
+        options_length = batch['opt_len']
+        options_length = options_length.view(batch_size * num_rounds * num_options)
 
-        options = self.word_embed(options)
-        options = options.view(batch_size * num_rounds, num_options, max_opt_len, -1)
-        enc_out = enc_out.view(batch_size * num_rounds, -1)
+        # shape: (batch_size * num_rounds * num_options, max_sequence_length, word_embedding_size)
+        options_embed = self.word_embed(options)
 
-        # score each option
-        scores = []
-        for opt_id in range(num_options):
-            opt = options[:, opt_id, :, :]
-            opt_len = options_len[:, opt_id]
-            opt_embed = self.option_rnn(opt, opt_len)
-            scores.append(torch.sum(opt_embed * enc_out, 1))
+        # shape: (batch_size * num_rounds * num_options, lstm_hidden_size)
+        options_embed = self.option_rnn(options_embed, options_length)
 
-        # return scores
-        return torch.stack(scores, 1)
+        # repeat encoder output for every option
+        # shape: (batch_size, num_rounds, num_options, max_sequence_length)
+        encoder_output = encoder_output.unsqueeze(2).repeat(1, 1, num_options, 1)
+
+        # shape now same as `options`, can calculate dot product similarity
+        # shape: (batch_size * num_rounds * num_options, lstm_hidden_state)
+        encoder_output = encoder_output.view(
+            batch_size * num_rounds * num_options, self.config["lstm_hidden_size"]
+        )
+
+        # shape: (batch_size * num_rounds * num_options)
+        scores = torch.sum(options_embed * encoder_output, 1)
+        # shape: (batch_size, num_rounds, num_options)
+        scores = scores.view(batch_size, num_rounds, num_options)
+        return scores

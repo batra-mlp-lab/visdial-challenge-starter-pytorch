@@ -177,7 +177,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         # ----------------------------------------------------------------------------------------
         optimizer.zero_grad()
         output = model(batch)
-        batch_loss = criterion(output, batch["ans_ind"].view(-1))
+        batch_loss = criterion(output.view(-1, output.size(-1)), batch["ans_ind"].view(-1))
         batch_loss.backward()
         optimizer.step()
 
