@@ -80,6 +80,8 @@ args = parser.parse_args()
 
 # keys: {"dataset", "model", "solver"}
 config = yaml.load(open(args.config_yml))
+
+if isinstance(args.gpu_ids, int): args.gpu_ids = [args.gpu_ids]
 device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
 
 # print config and args

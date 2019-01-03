@@ -1,8 +1,8 @@
 # Dataset reader arguments
 dataset:
-  image_features_train_h5: 'data/features_train_vgg16_fc7.h5'
-  image_features_val_h5: 'data/features_val_vgg16_fc7.h5'
-  image_features_test_h5: 'data/features_test_vgg16_fc7.h5'
+  image_features_train_h5: 'data/features_vgg16_fc7_train.h5'
+  image_features_val_h5: 'data/features_vgg16_fc7_val.h5'
+  image_features_test_h5: 'data/features_vgg16_fc7_test.h5'
   word_counts_json: 'data/visdial_1.0_word_counts_train.json'
 
   img_norm: 1
@@ -25,7 +25,7 @@ model:
 
 # Optimization related arguments
 solver:
-  batch_size: 20
+  batch_size: 32
   num_epochs: 20
   initial_lr: 0.001
   lr_gamma: 0.9997592083

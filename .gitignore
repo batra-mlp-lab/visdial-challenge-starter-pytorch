@@ -25,12 +25,11 @@ wheels/
 *.egg
 MANIFEST
 
-# Datasets, pretrained models and preprocessed files
+# Datasets, pretrained models, checkpoints and preprocessed files
 data/
 !visdialch/data/
-
-# Checkpoints directory
 checkpoints/
+logs/
 
 # IPython Notebook
 .ipynb_checkpoints
