@@ -218,5 +218,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
             gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
             all_ranks.append(gt_ranks)
         all_ranks = torch.cat(all_ranks, 0)
+        # collapse batch dimension
+        all_ranks = all_ranks.view(-1, all_ranks.size(-1))
         process_ranks(all_ranks)
 

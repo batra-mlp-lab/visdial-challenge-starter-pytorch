@@ -23,8 +23,8 @@ class DiscriminativeDecoder(nn.Module):
         """Given `encoder_output` and candidate option sequences, predict a score
         for each option sequence.
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         encoder_output: torch.Tensor
             Output from the encoder through its forward pass.
             (batch_size, num_rounds, lstm_hidden_size)
