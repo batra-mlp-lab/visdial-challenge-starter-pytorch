@@ -13,7 +13,7 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
-from visdialch.metrics import SparseGTMetrics
+from visdialch.metrics import SparseGTMetrics, NDCG
 from visdialch.model import EncoderDecoderModel
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
@@ -31,6 +31,10 @@ parser.add_argument(
 parser.add_argument(
     "--val-json", default="data/visdial_1.0_val.json",
     help="Path to json file containing VisDial v1.0 validation data."
+)
+parser.add_argument(
+    "--val-dense-json", default="data/visdial_1.0_val_dense_annotations.json",
+    help="Path to json file containing VisDial v1.0 validation dense ground truth annotations."
 )
 
 
@@ -96,12 +100,16 @@ for arg in vars(args):
 #   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER
 # ================================================================================================
 
-train_dataset = VisDialDataset(args.train_json, config["dataset"], args.overfit, args.in_memory)
+train_dataset = VisDialDataset(
+    config["dataset"], args.train_json, args.overfit, args.in_memory
+)
 train_dataloader = DataLoader(
     train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
 
-val_dataset = VisDialDataset(args.val_json, config["dataset"], args.overfit, args.in_memory)
+val_dataset = VisDialDataset(
+    config["dataset"], args.val_json, args.val_dense_json, args.overfit, args.in_memory
+)
 val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
@@ -131,6 +139,7 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["
 
 checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, config=config)
 sparse_metrics = SparseGTMetrics()
+ndcg = NDCG()
 
 # if loading from checkpoint, adjust start epoch and load parameters
 if args.load_pthpath == "":
@@ -201,19 +210,17 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
     # validate and report automatic metrics
     if args.validate:
         print(f"Validation after epoch {epoch}:")
-        all_ranks = []
         for i, batch in enumerate(tqdm(val_dataloader)):
             for key in batch:
                 batch[key] = batch[key].to(device)
             with torch.no_grad():
                 output = model(batch)
             sparse_metrics.observe(output, batch["ans_ind"])
+            if "gt_relevance" in batch:
+                output = output[torch.arange(output.size(0)), batch["round_id"] - 1, :]
+                ndcg.observe(output, batch["gt_relevance"])
 
-            ranks = scores_to_ranks(output)
-            gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
-            all_ranks.append(gt_ranks)
-        all_ranks = torch.cat(all_ranks, 0)
-        # collapse batch dimension
-        all_ranks = all_ranks.view(-1, all_ranks.size(-1))
-        process_ranks(all_ranks)
-        print(sparse_metrics.retrieve(reset=True))
+        print("Metrics: ")
+        for key, value in sparse_metrics.retrieve(reset=True):
+            print(key, value)
+        print("NDCG:", ndcg.retrieve(reset=True)["ndcg"])
