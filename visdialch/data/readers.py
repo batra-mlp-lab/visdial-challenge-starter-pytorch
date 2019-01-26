@@ -20,19 +20,19 @@ from nltk.tokenize import word_tokenize
 from tqdm import tqdm
 
 
-class VisDialJsonReader(object):
+class DialogsReader(object):
     """
-    A simple reader for VisDial v1.0 data. The json file must have the same structure as mentioned
-    on ``https://visualdialog.org/data``.
+    A simple reader for VisDial v1.0 dialog data. The json file must have the same structure as
+    mentioned on ``https://visualdialog.org/data``.
 
     Parameters
     ----------
-    visdial_jsonpath : str
-        Path to a json file containing VisDial v1.0 train, val or test data.
+    dialogs_jsonpath : str
+        Path to a json file containing VisDial v1.0 train, val or test dialog data.
     """
 
-    def __init__(self, visdial_jsonpath: str):
-        with open(visdial_jsonpath, "r") as visdial_file:
+    def __init__(self, dialogs_jsonpath: str):
+        with open(dialogs_jsonpath, "r") as visdial_file:
             visdial_data = json.load(visdial_file)
             self._split = visdial_data["split"]
 
@@ -108,6 +108,36 @@ class VisDialJsonReader(object):
     @property
     def split(self):
         return self._split
+
+
+class DenseAnnotationsReader(object):
+    """
+    A reader for dense annotations for val split. The json file must have the same structure as mentioned
+    on ``https://visualdialog.org/data``.
+
+    Parameters
+    ----------
+    dense_annotations_jsonpath : str
+        Path to a json file containing VisDial v1.0 
+    """
+
+    def __init__(self, dense_annotations_jsonpath: str):
+        with open(dense_annotations_jsonpath, "r") as visdial_file:
+            self._visdial_data = json.load(visdial_file)
+            self._image_ids = [entry["image_id"] for entry in self._visdial_data]
+
+    def __len__(self):
+        return len(self._image_ids)
+
+    def __getitem__(self, image_id: int) -> Dict[str, Union[int, List]]:
+        index = self._image_ids.index(image_id)
+        # keys: {"image_id", "round_id", "gt_relevance"}
+        return self._visdial_data[index]
+
+    @property
+    def split(self):
+        # always
+        return "val"
 
 
 class ImageFeaturesHdfReader(object):

@@ -34,18 +34,21 @@ def process_ranks(ranks):
     print("\tmeanRR: {}".format(torch.mean(ranks.reciprocal())))
 
 
-def scores_to_ranks(scores):
-    # sort in descending order - largest score gets highest rank
+def scores_to_ranks(scores: torch.Tensor):
+    """Convert model output scores into ranks."""
     batch_size, num_rounds, num_options = scores.size()
     scores = scores.view(-1, num_options)
 
+    # sort in descending order - largest score gets highest rank
     sorted_ranks, ranked_idx = scores.sort(1, descending=True)
 
-    # convert from ranked_idx to ranks
+    # i-th position in ranked_idx specifies which score shall take this position
+    # but we want i-th position to have rank of score at that position, do this conversion
     ranks = ranked_idx.clone().fill_(0)
     for i in range(ranked_idx.size(0)):
-        for j in range(100):
+        for j in range(num_options):
             ranks[i][ranked_idx[i][j]] = j
+    # convert from 0-99 ranks to 1-100 ranks
     ranks += 1
     ranks = ranks.view(batch_size, num_rounds, num_options)
     return ranks

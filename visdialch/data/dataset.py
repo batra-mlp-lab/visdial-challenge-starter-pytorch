@@ -1,44 +1,51 @@
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import torch
 from torch.nn.functional import normalize
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
-from visdialch.data.readers import VisDialJsonReader, ImageFeaturesHdfReader
+from visdialch.data.readers import DialogsReader, DenseAnnotationsReader, ImageFeaturesHdfReader
 from visdialch.data.vocabulary import Vocabulary
 
 
 class VisDialDataset(Dataset):
     def __init__(self,
-                 visdial_jsonpath: str,
                  config: Dict[str, Union[int, str]],
+                 dialogs_jsonpath: str,
+                 dense_annotations_jsonpath: Optional[str] = None,
                  overfit: bool = False,
                  in_memory: bool = False):
         super().__init__()
         self.config = config
-        self.json_reader = VisDialJsonReader(visdial_jsonpath)
+        self.dialogs_reader = DialogsReader(dialogs_jsonpath)
+
+        if "val" in self.split and dense_annotations_jsonpath is not None:
+            self.annotations_reader = DenseAnnotationsReader(dense_annotations_jsonpath)
+        else:
+            self.annotations_reader = None
+
         self.vocabulary = Vocabulary(
             config["word_counts_json"], min_count=config["vocab_min_count"]
         )
 
         # initialize image features reader according to split
         image_features_hdfpath = config["image_features_train_h5"]
-        if "val" in self.json_reader.split:
+        if "val" in self.dialogs_reader.split:
             image_features_hdfpath = config["image_features_val_h5"]
-        elif "test" in self.json_reader.split:
+        elif "test" in self.dialogs_reader.split:
             image_features_hdfpath = config["image_features_test_h5"]
 
         self.hdf_reader = ImageFeaturesHdfReader(image_features_hdfpath, in_memory)
 
         # keep a list of image_ids as primary keys to access data
-        self.image_ids = list(self.json_reader.dialogs.keys())
+        self.image_ids = list(self.dialogs_reader.dialogs.keys())
         if overfit:
             self.image_ids = self.image_ids[:5]
 
     @property
     def split(self):
-        return self.json_reader.split
+        return self.dialogs_reader.split
 
     def __len__(self):
         return len(self.image_ids)
@@ -55,7 +62,7 @@ class VisDialDataset(Dataset):
             image_features = normalize(image_features, dim=0, p=2)
 
         # retrieve instance for this image_id using json reader
-        visdial_instance = self.json_reader[image_id]
+        visdial_instance = self.dialogs_reader[image_id]
         caption = visdial_instance["caption"]
         dialog = visdial_instance["dialog"]
 
@@ -104,6 +111,13 @@ class VisDialDataset(Dataset):
         item["num_rounds"] = torch.tensor(visdial_instance["num_rounds"]).long()
         if "test" not in self.split:
             item["ans_ind"] = torch.tensor(answer_indices).long()
+
+        # gather dense annotations
+        if "val" in self.split:
+            dense_annotations = self.annotations_reader[image_id]
+            item["gt_relevance"] = torch.tensor(dense_annotations["gt_relevance"]).float()
+            item["round_id"] = torch.tensor(dense_annotations["round_id"]).long()
+
         return item
 
     def _pad_sequences(self, sequences: List[List[int]]):
@@ -162,7 +176,7 @@ class VisDialDataset(Dataset):
         history = history[:-1]
         max_history_length = self.config["max_sequence_length"] * 2
 
-        if self.config["concat_history"]:
+        if self.config.get("concat_history", False):
             # concatenated_history has similar structure as history, except it contains
             # concatenated QA pairs from previous rounds
             concatenated_history = []

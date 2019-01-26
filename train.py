@@ -13,6 +13,7 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
+from visdialch.metrics import SparseGTMetrics
 from visdialch.model import EncoderDecoderModel
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
@@ -92,7 +93,7 @@ for arg in vars(args):
 
 
 # ================================================================================================
-#   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, CHECKPOINT MANAGER
+#   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER
 # ================================================================================================
 
 train_dataset = VisDialDataset(args.train_json, config["dataset"], args.overfit, args.in_memory)
@@ -123,12 +124,13 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=config["solver"]["initial_lr"])
 scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["lr_gamma"])
 
-checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, config=config)
-
 
 # ================================================================================================
 #   SETUP BEFORE TRAINING LOOP
 # ================================================================================================
+
+checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, config=config)
+sparse_metrics = SparseGTMetrics()
 
 # if loading from checkpoint, adjust start epoch and load parameters
 if args.load_pthpath == "":
@@ -166,24 +168,15 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
     print(f"Number of iterations this epoch: {iterations}")
 
     for i, batch in enumerate(combined_dataloader):
-        # ----------------------------------------------------------------------------------------
-        #   ON ITERATION START  (shift all tensors to "device")
-        # ----------------------------------------------------------------------------------------
         for key in batch:
             batch[key] = batch[key].to(device)
 
-        # ----------------------------------------------------------------------------------------
-        #   ITERATION: FORWARD - BACKWARD - STEP
-        # ----------------------------------------------------------------------------------------
         optimizer.zero_grad()
         output = model(batch)
         batch_loss = criterion(output.view(-1, output.size(-1)), batch["ans_ind"].view(-1))
         batch_loss.backward()
         optimizer.step()
 
-        # ----------------------------------------------------------------------------------------
-        #   ON ITERATION END  (running loss, print training progress)
-        # ----------------------------------------------------------------------------------------
         if running_loss > 0.0:
             running_loss = 0.95 * running_loss + 0.05 * batch_loss.item()
         else:
@@ -214,6 +207,8 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
                 batch[key] = batch[key].to(device)
             with torch.no_grad():
                 output = model(batch)
+            sparse_metrics.observe(output, batch["ans_ind"])
+
             ranks = scores_to_ranks(output)
             gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
             all_ranks.append(gt_ranks)
@@ -221,4 +216,4 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         # collapse batch dimension
         all_ranks = all_ranks.view(-1, all_ranks.size(-1))
         process_ranks(all_ranks)
-
+        print(sparse_metrics.retrieve(reset=True))
