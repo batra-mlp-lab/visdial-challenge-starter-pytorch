@@ -12,29 +12,39 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
+from visdialch.metrics import SparseGTMetrics, NDCG, scores_to_ranks
 from visdialch.model import EncoderDecoderModel
 from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 from visdialch.utils.checkpointing import load_checkpoint
 
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser("Evaluate and/or generate EvalAI submission file.")
 parser.add_argument(
     "--config-yml", default="configs/lf_disc_vgg16_fc7_bs32.yml",
     help="Path to a config file listing reader, model and optimization parameters."
 )
 parser.add_argument(
-    "--eval-json", default="data/visdial_1.0_val.json",
-    help="Path to VisDial v1.0 val/test data, whichever to evaluate on."
+    "--split", default="val", choices=["val", "test"],
+    help="Which split to evaluate upon."
+)
+parser.add_argument(
+    "--val-json", default="data/visdial_1.0_val.json",
+    help="Path to VisDial v1.0 val data. This argument doesn't work when --split=test."
+)
+parser.add_argument(
+    "--val-dense-json", default="data/visdial_1.0_val_dense_annotations.json",
+    help="Path to VisDial v1.0 val dense annotations (if evaluating on val split)."
+         "This argument doesn't work when --split=test."
+)
+parser.add_argument(
+    "--test-json", default="data/visdial_1.0_test.json",
+    help="Path to VisDial v1.0 test data. This argument doesn't work when --split=val."
 )
 
 parser.add_argument_group("Evaluation related arguments")
 parser.add_argument(
     "--load-pthpath", default="checkpoints/checkpoint_xx.pth",
     help="Path to .pth file of pretrained checkpoint."
-)
-parser.add_argument(
-    "--use-gt", action="store_true",
-    help="Whether to use ground truth for retrieving ranks"
 )
 
 parser.add_argument_group("Arguments independent of experiment reproducibility")
@@ -50,11 +60,16 @@ parser.add_argument(
     "--overfit", action="store_true",
     help="Overfit model on 5 examples, meant for debugging."
 )
+parser.add_argument(
+    "--in-memory", action="store_true",
+    help="Load the whole dataset and pre-extracted image features in memory. Use only in "
+         "presence of large RAM, atleast few tens of GBs."
+)
 
 parser.add_argument_group("Submission related arguments")
 parser.add_argument(
     "--save-ranks-path", default="logs/ranks.json",
-    help="Path (json) to save ranks, works only when use_gt=false."
+    help="Path (json) to save ranks, in a EvalAI submission format."
 )
 
 # for reproducibility - refer https://pytorch.org/docs/stable/notes/randomness.html
@@ -71,7 +86,8 @@ args = parser.parse_args()
 
 # keys: {"dataset", "model", "solver"}
 config = yaml.load(open(args.config_yml))
-if type(args.gpu_ids) == int: args.gpu_ids = [args.gpu_ids]
+
+if isinstance(args.gpu_ids, int): args.gpu_ids = [args.gpu_ids]
 device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
 
 # print config and args
@@ -84,14 +100,18 @@ for arg in vars(args):
 #   SETUP DATASET, DATALOADER, MODEL
 # ================================================================================================
 
-val_dataset = VisDialDataset(args.eval_json, config["dataset"], args.overfit)
+if args.split == "val":
+    val_dataset = VisDialDataset(
+        config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit,
+        in_memory=args.in_memory
+    )
+else:
+    val_dataset = VisDialDataset(
+        config["dataset"], args.test_json, overfit=args.overfit, in_memory=args.in_memory
+    )
 val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
-
-if args.use_gt and "test" in dataset.split:
-    print("Warning: No ground truth for test split, changing use_gt to False.")
-    args.use_gt = False
 
 # pass vocabulary to construct nn.Embedding
 encoder = Encoder(config["model"], val_dataset.vocabulary)
@@ -114,58 +134,54 @@ else:
     model.load_state_dict(model_state_dict)
 print("Loaded model from {}".format(args.load_pthpath))
 
+# Declare metric accumulators (won't be used if --split=test)
+sparse_metrics = SparseGTMetrics()
+ndcg = NDCG()
+
 # ================================================================================================
 #   EVALUATION LOOP
 # ================================================================================================
 
-encoder.eval()
-decoder.eval()
+model.eval()
+ranks_json = []
 
-if args.use_gt:
-    # --------------------------------------------------------------------------------------------
-    # calculate automatic metrics and finish
-    # --------------------------------------------------------------------------------------------
-    all_ranks = []
-    for i, batch in enumerate(tqdm(val_dataloader)):
-        for key in batch:
-            batch[key] = batch[key].to(device)
-        with torch.no_grad():
-            output = model(batch)
-        ranks = scores_to_ranks(output)
-        gt_ranks = get_gt_ranks(ranks, batch["ans_ind"])
-        all_ranks.append(gt_ranks)
-    all_ranks = torch.cat(all_ranks, 0)
-    process_ranks(all_ranks)
-else:
-    # --------------------------------------------------------------------------------------------
-    # prepare json for submission
-    # --------------------------------------------------------------------------------------------
-    ranks_json = []
-    for i, batch in enumerate(tqdm(val_dataloader)):
-        for key in batch:
-            batch[key] = batch[key].to(device)
-        with torch.no_grad():
-                output = model(batch)
-        ranks = scores_to_ranks(output)
-        ranks = ranks.view(-1, 10, 100)
+for _, batch in enumerate(tqdm(val_dataloader)):
+    for key in batch:
+        batch[key] = batch[key].to(device)
+    with torch.no_grad():
+        output = model(batch)
 
-        for i in range(len(batch["img_ids"])):
-            # cast into types explicitly to ensure no errors in schema
-            # round ids are 1-10, not 0-9
-            if "test" in val_dataset.split:
+    ranks = scores_to_ranks(output)
+    for i in range(len(batch["img_ids"])):
+        # cast into types explicitly to ensure no errors in schema
+        # round ids are 1-10, not 0-9
+        if args.split == "test":
+            ranks_json.append({
+                "image_id": batch["img_ids"][i].item(),
+                "round_id": int(batch["num_rounds"][i].item()),
+                "ranks": [rank.item() for rank in ranks[i][batch["num_rounds"][i] - 1]]
+            })
+        else:
+            for j in range(batch["num_rounds"][i]):
                 ranks_json.append({
                     "image_id": batch["img_ids"][i].item(),
-                    "round_id": int(batch["num_rounds"][i].item()),
-                    "ranks": [rank.item() for rank in ranks[i][batch["num_rounds"][i] - 1]]
+                    "round_id": int(j + 1),
+                    "ranks": [rank.item() for rank in ranks[i][j]]
                 })
-            else:
-                for j in range(batch["num_rounds"][i]):
-                    ranks_json.append({
-                        "image_id": batch["img_ids"][i].item(),
-                        "round_id": int(j + 1),
-                        "ranks": [rank.item() for rank in ranks[i][j]]
-                    })
 
-    print("Writing ranks to {}".format(args.save_ranks_path))
-    os.makedirs(os.path.dirname(args.save_ranks_path), exist_ok=True)
-    json.dump(ranks_json, open(args.save_ranks_path, "w"))
+    if args.split == "val":
+        sparse_metrics.observe(output, batch["ans_ind"])
+        if "gt_relevance" in batch:
+            output = output[torch.arange(output.size(0)), batch["round_id"] - 1, :]
+            ndcg.observe(output, batch["gt_relevance"])
+
+if args.split == "val":
+    all_metrics = {}
+    all_metrics.update(sparse_metrics.retrieve(reset=True))
+    all_metrics.update(ndcg.retrieve(reset=True))
+    for metric_name, metric_value in all_metrics.items():
+        print(f"{metric_name}: {metric_value}")
+
+print("Writing ranks to {}".format(args.save_ranks_path))
+os.makedirs(os.path.dirname(args.save_ranks_path), exist_ok=True)
+json.dump(ranks_json, open(args.save_ranks_path, "w"))

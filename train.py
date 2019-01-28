@@ -3,6 +3,7 @@ from datetime import datetime
 import itertools
 import os
 
+from tensorboardX import SummaryWriter
 import torch
 from torch import nn, optim
 from torch.optim import lr_scheduler
@@ -101,14 +102,14 @@ for arg in vars(args):
 # ================================================================================================
 
 train_dataset = VisDialDataset(
-    config["dataset"], args.train_json, args.overfit, args.in_memory
+    config["dataset"], args.train_json, overfit=args.overfit, in_memory=args.in_memory
 )
 train_dataloader = DataLoader(
     train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
 
 val_dataset = VisDialDataset(
-    config["dataset"], args.val_json, args.val_dense_json, args.overfit, args.in_memory
+    config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit, in_memory=args.in_memory
 )
 val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
@@ -137,6 +138,7 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["
 #   SETUP BEFORE TRAINING LOOP
 # ================================================================================================
 
+summary_writer = SummaryWriter(log_dir=args.save_dirpath)
 checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, config=config)
 sparse_metrics = SparseGTMetrics()
 ndcg = NDCG()
@@ -157,26 +159,26 @@ else:
     print("Loaded model from {}".format(args.load_pthpath))
 
 
+if config["solver"]["training_splits"] == "trainval":
+    combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
+    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
+else:
+    combined_dataloader = itertools.chain(train_dataloader)
+    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
+
 # ================================================================================================
 #   TRAINING LOOP
 # ================================================================================================
 
-running_loss = 0.0
-train_begin = datetime.now()
+# Forever increasing counter keeping track of iterations completed, 
+global_iteration_step = (start_epoch - 1) * iterations
 for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH START  (combine dataloaders if training on train + val)
     # --------------------------------------------------------------------------------------------
-    if config["solver"]["training_splits"] == "trainval":
-        combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
-        iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
-    else:
-        combined_dataloader = itertools.chain(train_dataloader)
-        iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
-    print(f"Number of iterations this epoch: {iterations}")
-
-    for i, batch in enumerate(combined_dataloader):
+    print(f"\nTraining for epoch {epoch}:")
+    for i, batch in enumerate(tqdm(combined_dataloader)):
         for key in batch:
             batch[key] = batch[key].to(device)
 
@@ -186,21 +188,11 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         batch_loss.backward()
         optimizer.step()
 
-        if running_loss > 0.0:
-            running_loss = 0.95 * running_loss + 0.05 * batch_loss.item()
-        else:
-            running_loss = batch_loss.item()
-
+        summary_writer.add_scalar("train/loss", batch_loss, global_iteration_step)
+        summary_writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_iteration_step)
         if optimizer.param_groups[0]["lr"] > config["solver"]["minimum_lr"]:
             scheduler.step()
-
-        if i % 100 == 0:
-            # print current time, epoch, iteration, running loss, learning rate
-            print("[{}][Epoch: {:3d}][Iter: {:6d}][Loss: {:6f}][lr: {:7f}]".format(
-                    datetime.now() - train_begin, epoch, i,
-                    running_loss, optimizer.param_groups[0]["lr"]
-                )
-            )
+        global_iteration_step += 1
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH END  (checkpointing and validation)
@@ -209,7 +201,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
     # validate and report automatic metrics
     if args.validate:
-        print(f"Validation after epoch {epoch}:")
+        print(f"\nValidation after epoch {epoch}:")
         for i, batch in enumerate(tqdm(val_dataloader)):
             for key in batch:
                 batch[key] = batch[key].to(device)
@@ -220,7 +212,9 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
                 output = output[torch.arange(output.size(0)), batch["round_id"] - 1, :]
                 ndcg.observe(output, batch["gt_relevance"])
 
-        print("Metrics: ")
-        for key, value in sparse_metrics.retrieve(reset=True):
-            print(key, value)
-        print("NDCG:", ndcg.retrieve(reset=True)["ndcg"])
+        all_metrics = {}
+        all_metrics.update(sparse_metrics.retrieve(reset=True))
+        all_metrics.update(ndcg.retrieve(reset=True))
+        for metric_name, metric_value in all_metrics.items():
+            print(f"{metric_name}: {metric_value}")
+        summary_writer.add_scalars("metrics", all_metrics, global_iteration_step)

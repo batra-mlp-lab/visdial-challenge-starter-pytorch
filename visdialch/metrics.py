@@ -16,7 +16,7 @@ model output tensors (like logits), else it will cause memory leaks.
 import torch
 
 
-def _scores_to_ranks(scores: torch.Tensor):
+def scores_to_ranks(scores: torch.Tensor):
     """Convert model output scores into ranks."""
     batch_size, num_rounds, num_options = scores.size()
     scores = scores.view(-1, num_options)
@@ -51,7 +51,7 @@ class SparseGTMetrics(object):
         predicted_scores = predicted_scores.detach()
 
         # shape: (batch_size, num_rounds, num_options)
-        predicted_ranks = _scores_to_ranks(predicted_scores)
+        predicted_ranks = scores_to_ranks(predicted_scores)
         batch_size, num_rounds, num_options = predicted_ranks.size()
 
         # collapse batch dimension
@@ -62,7 +62,7 @@ class SparseGTMetrics(object):
 
         # shape: (batch_size * num_rounds, )
         predicted_gt_ranks = predicted_ranks[torch.arange(batch_size * num_rounds), target_ranks]
-        self._rank_list.append(list(predicted_gt_ranks.cpu().numpy()))
+        self._rank_list.extend(list(predicted_gt_ranks.cpu().numpy()))
 
     def retrieve(self, reset: bool = True):
         num_examples = len(self._rank_list)
@@ -111,7 +111,7 @@ class NDCG(object):
 
         # shape: (batch_size, 1, num_options)
         predicted_scores = predicted_scores.unsqueeze(1)
-        predicted_ranks = _scores_to_ranks(predicted_scores)
+        predicted_ranks = scores_to_ranks(predicted_scores)
 
         # shape: (batch_size, num_options)
         predicted_ranks = predicted_ranks.squeeze()

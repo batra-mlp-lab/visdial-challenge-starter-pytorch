@@ -30,5 +30,5 @@ solver:
   initial_lr: 0.001
   lr_gamma: 0.9997592083
   minimum_lr: 0.00005
-  training_splits: "train"  # "trainval"
+  training_splits: "trainval"  # "trainval"
 
