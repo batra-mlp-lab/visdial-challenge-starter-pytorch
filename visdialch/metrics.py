@@ -127,8 +127,13 @@ class NDCG(object):
         # shape: (batch_size, )
         batch_ndcg = []
         for batch_index in range(batch_size):
-            dcg = self._dcg(rankings[batch_index], target_relevance[batch_index])
-            best_dcg = self._dcg(best_rankings[batch_index], target_relevance[batch_index])
+            num_relevant = k[batch_index]
+            dcg = self._dcg(
+                rankings[batch_index][:num_relevant], target_relevance[batch_index]
+            )
+            best_dcg = self._dcg(
+                best_rankings[batch_index][:num_relevant], target_relevance[batch_index]
+            )
             batch_ndcg.append(dcg / best_dcg)
 
         self._ndcg_denominator += batch_size
