@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import functional as F
-from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class DynamicRNN(nn.Module):
@@ -15,11 +15,12 @@ class DynamicRNN(nn.Module):
 
         Arguments
         ---------
-        seq_input : torch.autograd.Variable
-            Input sequence tensor (padded) for RNN model. (b, max_seq_len, embed_size)
+        seq_input : torch.Tensor
+            Input sequence tensor (padded) for RNN model.
+            Shape: (batch_size, max_sequence_length, embed_size)
         seq_lens : torch.LongTensor
             Length of sequences (b, )
-        initial_state : torch.autograd.Variable
+        initial_state : torch.Tensor
             Initial (hidden, cell) states of RNN model.
 
         Returns
@@ -28,6 +29,7 @@ class DynamicRNN(nn.Module):
             to the outputs of the RNN model at the last time step of each input
             sequence.
         """
+        max_sequence_length = seq_input.size(1)
         sorted_len, fwd_order, bwd_order = self._get_sorted_order(seq_lens)
         sorted_seq_input = seq_input.index_select(0, fwd_order)
         packed_seq_input = pack_padded_sequence(
@@ -41,10 +43,16 @@ class DynamicRNN(nn.Module):
             hx = None
 
         self.rnn_model.flatten_parameters()
-        _, (h_n, c_n) = self.rnn_model(packed_seq_input, hx)
+        outputs, (h_n, c_n) = self.rnn_model(packed_seq_input, hx)
 
-        rnn_output = h_n[-1].index_select(dim=0, index=bwd_order)
-        return rnn_output
+        # pick hidden and cell states of last layer
+        h_n = h_n[-1].index_select(dim=0, index=bwd_order)
+        c_n = c_n[-1].index_select(dim=0, index=bwd_order)
+
+        outputs = pad_packed_sequence(
+            outputs, batch_first=True, total_length=max_sequence_length
+        )
+        return outputs, (h_n, c_n)
 
     @staticmethod
     def _get_sorted_order(lens):

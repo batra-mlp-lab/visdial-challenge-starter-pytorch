@@ -41,7 +41,7 @@ class DiscriminativeDecoder(nn.Module):
         options_embed = self.word_embed(options)
 
         # shape: (batch_size * num_rounds * num_options, lstm_hidden_size)
-        options_embed = self.option_rnn(options_embed, options_length)
+        _, (options_embed, _) = self.option_rnn(options_embed, options_length)
 
         # repeat encoder output for every option
         # shape: (batch_size, num_rounds, num_options, max_sequence_length)

@@ -14,9 +14,8 @@ import yaml
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
 from visdialch.decoders import Decoder
-from visdialch.metrics import SparseGTMetrics, NDCG
+from visdialch.metrics import SparseGTMetrics, NDCG, scores_to_ranks
 from visdialch.model import EncoderDecoderModel
-from visdialch.utils import process_ranks, scores_to_ranks, get_gt_ranks
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 

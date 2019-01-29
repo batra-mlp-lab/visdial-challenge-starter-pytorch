@@ -33,10 +33,17 @@ class LateFusionEncoder(nn.Module):
         self.hist_rnn = DynamicRNN(self.hist_rnn)
         self.ques_rnn = DynamicRNN(self.ques_rnn)
 
-        # fusion layer
+        # project image features to lstm_hidden_size for computing attention
+        self.image_features_projection = nn.Linear(
+            config["img_feature_size"], config["lstm_hidden_size"]
+        )
+
+        # fusion layer (attended_image_features + question + history)
         fusion_size = config["img_feature_size"] + config["lstm_hidden_size"] * 2
         self.fusion = nn.Linear(fusion_size, config["lstm_hidden_size"])
 
+        nn.init.kaiming_uniform_(self.image_features_projection.weight)
+        nn.init.constant_(self.image_features_projection.bias, 0)
         nn.init.kaiming_uniform_(self.fusion.weight)
         nn.init.constant_(self.fusion.bias, 0)
 
@@ -51,24 +58,52 @@ class LateFusionEncoder(nn.Module):
         # num_rounds = 10, even for test split (padded dialog rounds at the end)
         batch_size, num_rounds, max_sequence_length = ques.size()
 
-        # average bottom-up features of all proposals, to form fc7-like features
-        if img.dim() == 3:
-            img = torch.mean(img, dim=1)  # shape: (batch_size, img_feature_size)
-
-        # repeat image feature vectors to be provided for every round
-        img = img.view(batch_size, 1, self.config["img_feature_size"])
-        img = img.repeat(1, num_rounds, 1)
-        img = img.view(batch_size * num_rounds, self.config["img_feature_size"])
-
         # embed questions
         ques = ques.view(batch_size * num_rounds, max_sequence_length)
         ques_embed = self.word_embed(ques)
-        ques_embed = self.ques_rnn(ques_embed, batch["ques_len"])
+
+        # shape: (batch_size, max_sequence_length, lstm_hidden_size)
+        _, (ques_embed, _) = self.ques_rnn(ques_embed, batch["ques_len"])
+
+        # project down image features and ready for attention
+        # shape: (batch_size, num_proposals, lstm_hidden_size)
+        projected_image_features = self.image_features_projection(img)
+
+        # repeat image feature vectors to be provided for every round
+        # shape: (batch_size * num_rounds, num_proposals, lstm_hidden_size)
+        projected_image_features = projected_image_features.view(
+            batch_size, 1, -1, self.config["lstm_hidden_size"]
+        ).repeat(1, num_rounds, 1, 1).view(
+            batch_size * num_rounds, -1, self.config["lstm_hidden_size"]
+        )
+
+        # attend the features using question
+        # shape: (batch_size, num_proposals)
+        image_attention_weights = projected_image_features.bmm(
+            ques_embed.unsqueeze(-1)).squeeze()
+
+        # shape: (batch_size * num_rounds, num_proposals, img_features_size)
+        img = img.view(
+            batch_size, 1, -1, self.config["img_feature_size"]).repeat(
+            1, num_rounds, 1, 1).view(
+            batch_size * num_rounds, -1, self.config["img_feature_size"]
+        )
+
+        # multiply image features with their attention weights
+        # shape: (batch_size * num_rounds, num_proposals, img_feature_size)
+        image_attention_weights = image_attention_weights.unsqueeze(-1).repeat(
+            1, 1, self.config["img_feature_size"]
+        )
+        # shape: (batch_size * num_rounds, img_feature_size)
+        attended_image_features = (image_attention_weights * img).sum(1)
+        img = attended_image_features
 
         # embed history
         hist = hist.view(batch_size * num_rounds, max_sequence_length * 20)
         hist_embed = self.word_embed(hist)
-        hist_embed = self.hist_rnn(hist_embed, batch["hist_len"])
+
+        # shape: (batch_size, lstm_hidden_size)
+        _ , (hist_embed, _) = self.hist_rnn(hist_embed, batch["hist_len"])
 
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
         fused_vector = self.dropout(fused_vector)
