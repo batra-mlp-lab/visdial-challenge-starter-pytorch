@@ -58,7 +58,7 @@ docker build -t visdialch .
 3. Run this image in a container by setting current user, attaching project root (this codebase) as a volume and setting shared memory size according to your requirements (depends on the memory usage of your code).
 
 ```sh
-nvidia-docker run -u $(id -u):(id -g) -v $PROJECT_ROOT:/workspace \
+nvidia-docker run -u $(id -u):$(id -g) -v $PROJECT_ROOT:/workspace \
            --shm-size 16G visdialch /bin/bash
 ```
 

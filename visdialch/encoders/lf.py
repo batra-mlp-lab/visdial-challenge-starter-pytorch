@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from visdialch.utils import DynamicRNN
 
@@ -81,6 +82,7 @@ class LateFusionEncoder(nn.Module):
         # shape: (batch_size, num_proposals)
         image_attention_weights = projected_image_features.bmm(
             ques_embed.unsqueeze(-1)).squeeze()
+        image_attention_weights = F.softmax(image_attention_weights)
 
         # shape: (batch_size * num_rounds, num_proposals, img_features_size)
         img = img.view(

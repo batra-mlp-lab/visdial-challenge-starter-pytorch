@@ -1,5 +1,4 @@
 import argparse
-from datetime import datetime
 import itertools
 import os
 
@@ -169,7 +168,7 @@ else:
 #   TRAINING LOOP
 # ================================================================================================
 
-# Forever increasing counter keeping track of iterations completed, 
+# Forever increasing counter keeping track of iterations completed.
 global_iteration_step = (start_epoch - 1) * iterations
 for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
