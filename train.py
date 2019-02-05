@@ -156,21 +156,23 @@ else:
     optimizer.load_state_dict(optimizer_state_dict)
     print("Loaded model from {}".format(args.load_pthpath))
 
-
-if config["solver"]["training_splits"] == "trainval":
-    combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
-    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
-else:
-    combined_dataloader = itertools.chain(train_dataloader)
-    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
-
 # ================================================================================================
 #   TRAINING LOOP
 # ================================================================================================
 
 # Forever increasing counter keeping track of iterations completed.
-global_iteration_step = (start_epoch - 1) * iterations
+if config["solver"]["training_splits"] == "trainval":
+    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
+else:
+    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
+
+global_iteration_step = start_epoch * iterations
 for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
+
+    if config["solver"]["training_splits"] == "trainval":
+        combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
+    else:
+        combined_dataloader = itertools.chain(train_dataloader)
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH START  (combine dataloaders if training on train + val)

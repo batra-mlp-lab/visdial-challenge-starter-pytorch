@@ -63,7 +63,7 @@ class LateFusionEncoder(nn.Module):
         ques = ques.view(batch_size * num_rounds, max_sequence_length)
         ques_embed = self.word_embed(ques)
 
-        # shape: (batch_size, max_sequence_length, lstm_hidden_size)
+        # shape: (batch_size * num_rounds, max_sequence_length, lstm_hidden_size)
         _, (ques_embed, _) = self.ques_rnn(ques_embed, batch["ques_len"])
 
         # project down image features and ready for attention
@@ -79,10 +79,10 @@ class LateFusionEncoder(nn.Module):
         )
 
         # attend the features using question
-        # shape: (batch_size, num_proposals)
+        # shape: (batch_size * num_rounds, num_proposals)
         image_attention_weights = projected_image_features.bmm(
             ques_embed.unsqueeze(-1)).squeeze()
-        image_attention_weights = F.softmax(image_attention_weights)
+        image_attention_weights = F.softmax(image_attention_weights, dim=-1)
 
         # shape: (batch_size * num_rounds, num_proposals, img_features_size)
         img = img.view(
@@ -104,7 +104,7 @@ class LateFusionEncoder(nn.Module):
         hist = hist.view(batch_size * num_rounds, max_sequence_length * 20)
         hist_embed = self.word_embed(hist)
 
-        # shape: (batch_size, lstm_hidden_size)
+        # shape: (batch_size * num_rounds, lstm_hidden_size)
         _ , (hist_embed, _) = self.hist_rnn(hist_embed, batch["hist_len"])
 
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
