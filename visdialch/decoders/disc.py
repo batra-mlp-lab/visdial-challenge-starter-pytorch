@@ -37,13 +37,28 @@ class DiscriminativeDecoder(nn.Module):
         options_length = batch['opt_len']
         options_length = options_length.view(batch_size * num_rounds * num_options)
 
+        # Pick non-zero length options for processing (relevant for test split).
+        nonzero_options_length_indices = options_length.nonzero().squeeze()
+        nonzero_options_length = options_length[nonzero_options_length_indices]
+        nonzero_options = options[nonzero_options_length_indices]
+
         # shape: (batch_size * num_rounds * num_options, max_sequence_length, word_embedding_size)
-        options_embed = self.word_embed(options)
+        # FOR TEST SPLIT, shape: (batch_size * 1, num_options, max_sequence_length, word_embedding_size)
+        nonzero_options_embed = self.word_embed(nonzero_options)
 
         # shape: (batch_size * num_rounds * num_options, lstm_hidden_size)
-        _, (options_embed, _) = self.option_rnn(options_embed, options_length)
+        # FOR TEST SPLIT, shape: (batch_size * 1, num_options, lstm_hidden_size)
+        _, (nonzero_options_embed, _) = self.option_rnn(
+            nonzero_options_embed, nonzero_options_length
+        )
 
-        # repeat encoder output for every option
+        options_embed = torch.zeros(
+            batch_size * num_rounds * num_options, nonzero_options_embed.size(-1),
+            device=nonzero_options_embed.device
+        )
+        options_embed[nonzero_options_length_indices] = nonzero_options_embed
+
+        # Repeat encoder output for every option
         # shape: (batch_size, num_rounds, num_options, max_sequence_length)
         encoder_output = encoder_output.unsqueeze(2).repeat(1, 1, num_options, 1)
 
