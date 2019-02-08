@@ -84,7 +84,7 @@ We recommend this development workflow, attaching the codebase as a volume would
 Download Preprocessed Data
 --------------------------
 
-1. Get the word counts for VisDial v1.0 train split [here](). They are used to build the vocabulary.
+1. Get the word counts for VisDial v1.0 train split [here][9]. They are used to build the vocabulary.
 
 2. We also provide pre-extracted image features of VisDial v1.0 images, using a Faster-RCNN pre-trained on Visual Genome. If you wish to extract your own image features, skip this step. Extracted features for v1.0 train, val and test are available for download at these links.
 
@@ -162,6 +162,7 @@ Acknowledgements
 [4]: http://images.cocodataset.org/zips/val2014.zip
 [5]: https://www.github.com/lanpa/tensorboardX
 [6]: https://arxiv.org/abs/1707.07998
+[9]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/visdial_1.0_word_counts_train.json
 [10]: https://visualdialog.org/data
 [11]: http://www.robots.ox.ac.uk/~vgg/research/very_deep/
 [12]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/lf_disc_faster_rcnn_x101_bs32_trainval.pth
