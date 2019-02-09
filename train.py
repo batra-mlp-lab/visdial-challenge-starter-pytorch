@@ -20,7 +20,7 @@ from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--config-yml", default="configs/lf_disc_vgg16_fc7_bs20.yml",
+    "--config-yml", default="configs/lf_disc_faster_rcnn_x101_bs32.yml",
     help="Path to a config file listing reader, model and solver parameters."
 )
 parser.add_argument(
