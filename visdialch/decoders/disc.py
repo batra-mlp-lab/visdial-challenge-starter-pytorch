@@ -14,7 +14,9 @@ class DiscriminativeDecoder(nn.Module):
                                        padding_idx=vocabulary.PAD_INDEX)
         self.option_rnn = nn.LSTM(config["word_embedding_size"],
                                   config["lstm_hidden_size"],
-                                  batch_first=True)
+                                  config["lstm_num_layers"],
+                                  batch_first=True,
+                                  dropout=config["dropout"])
 
         # Options are variable length padded sequences, use DynamicRNN.
         self.option_rnn = DynamicRNN(self.option_rnn)
