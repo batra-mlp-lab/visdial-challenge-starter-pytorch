@@ -8,6 +8,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import yaml
+from bisect import bisect
 
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
@@ -19,7 +20,7 @@ from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--config-yml", default="configs/lf_disc_faster_rcnn_x101_bs32.yml",
+    "--config-yml", default="configs/lf_disc_faster_rcnn_x101.yml",
     help="Path to a config file listing reader, model and solver parameters."
 )
 parser.add_argument(
@@ -126,10 +127,36 @@ model = EncoderDecoderModel(encoder, decoder).to(device)
 if -1 not in args.gpu_ids:
     model = nn.DataParallel(model, args.gpu_ids)
 
+# loss
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=config["solver"]["initial_lr"])
-scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["lr_gamma"])
 
+if config["solver"]["training_splits"] == "trainval":
+    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
+else:
+    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
+
+
+def lr_lambda_fun(itn):
+    """Returns a learning rate multiplier.
+
+    Till `warmup_epochs`, learning rate linearly increases to `initial_lr`,
+    and then gets multiplied by `lr_gamma` every time a milestone is crossed.
+
+    Args:
+        itn: training iteration
+    Returns:
+        learning rate multiplier
+    """
+    cur_epoch = float(itn) / iterations
+    if cur_epoch <= config["solver"]["warmup_epochs"]:
+        alpha = cur_epoch / float(config["solver"]["warmup_epochs"])
+        return config["solver"]["warmup_factor"] * (1. - alpha) + alpha
+    else:
+        idx = bisect(config["solver"]["lr_milestones"], cur_epoch)
+        return pow(config["solver"]["lr_gamma"], idx)
+
+optimizer = optim.Adamax(model.parameters(), lr=config["solver"]["initial_lr"])
+scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_fun)
 
 # ================================================================================================
 #   SETUP BEFORE TRAINING LOOP
@@ -160,12 +187,8 @@ else:
 # ================================================================================================
 
 # Forever increasing counter keeping track of iterations completed.
-if config["solver"]["training_splits"] == "trainval":
-    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
-else:
-    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
-
 global_iteration_step = start_epoch * iterations
+
 for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
     # --------------------------------------------------------------------------------------------

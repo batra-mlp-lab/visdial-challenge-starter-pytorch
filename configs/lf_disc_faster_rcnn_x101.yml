@@ -29,4 +29,10 @@ solver:
   num_epochs: 20
   initial_lr: 0.001
   training_splits: "train"  # "trainval"
-
+  lr_gamma: 0.1
+  lr_milestones: # epochs when lr —> lr * lr_gamma
+    - 3
+    - 5
+    - 7
+  warmup_factor: 0.2
+  warmup_epochs: 1
