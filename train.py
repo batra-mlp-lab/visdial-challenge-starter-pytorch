@@ -102,7 +102,7 @@ train_dataset = VisDialDataset(
     config["dataset"], args.train_json, overfit=args.overfit, in_memory=args.in_memory
 )
 train_dataloader = DataLoader(
-    train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
+    train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers, shuffle=True
 )
 
 val_dataset = VisDialDataset(
@@ -189,9 +189,11 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
         summary_writer.add_scalar("train/loss", batch_loss, global_iteration_step)
         summary_writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_iteration_step)
-        if optimizer.param_groups[0]["lr"] > config["solver"]["minimum_lr"]:
-            scheduler.step()
+
         global_iteration_step += 1
+        scheduler.step(global_iteration_step)
+
+        torch.cuda.empty_cache()
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH END  (checkpointing and validation)
@@ -217,3 +219,5 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         for metric_name, metric_value in all_metrics.items():
             print(f"{metric_name}: {metric_value}")
         summary_writer.add_scalars("metrics", all_metrics, global_iteration_step)
+
+        torch.cuda.empty_cache()
