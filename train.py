@@ -225,6 +225,10 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
     # Validate and report automatic metrics.
     if args.validate:
+
+        # switch dropout, batchnorm etc to the correct mode
+        model.eval()
+
         print(f"\nValidation after epoch {epoch}:")
         for i, batch in enumerate(tqdm(val_dataloader)):
             for key in batch:
@@ -243,4 +247,5 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
             print(f"{metric_name}: {metric_value}")
         summary_writer.add_scalars("metrics", all_metrics, global_iteration_step)
 
+        model.train()
         torch.cuda.empty_cache()
