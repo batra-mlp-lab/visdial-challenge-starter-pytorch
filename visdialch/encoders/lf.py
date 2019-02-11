@@ -39,6 +39,9 @@ class LateFusionEncoder(nn.Module):
             config["img_feature_size"], config["lstm_hidden_size"]
         )
 
+        # fc layer for image * question to attention weights
+        self.attention_proj = nn.Linear(config["lstm_hidden_size"], 1)
+
         # fusion layer (attended_image_features + question + history)
         fusion_size = config["img_feature_size"] + config["lstm_hidden_size"] * 2
         self.fusion = nn.Linear(fusion_size, config["lstm_hidden_size"])
@@ -78,10 +81,14 @@ class LateFusionEncoder(nn.Module):
             batch_size * num_rounds, -1, self.config["lstm_hidden_size"]
         )
 
-        # attend the features using question
+        # computing attention weights
         # shape: (batch_size * num_rounds, num_proposals)
-        image_attention_weights = projected_image_features.bmm(
-            ques_embed.unsqueeze(-1)).squeeze()
+        projected_ques_features = ques_embed.unsqueeze(1).repeat(
+            1, img.shape[1], 1)
+        projected_ques_image = projected_ques_features * projected_image_features
+        projected_ques_image = self.dropout(projected_ques_image)
+        image_attention_weights = self.attention_proj(
+            projected_ques_image).squeeze()
         image_attention_weights = F.softmax(image_attention_weights, dim=-1)
 
         # shape: (batch_size * num_rounds, num_proposals, img_features_size)
@@ -105,7 +112,7 @@ class LateFusionEncoder(nn.Module):
         hist_embed = self.word_embed(hist)
 
         # shape: (batch_size * num_rounds, lstm_hidden_size)
-        _ , (hist_embed, _) = self.hist_rnn(hist_embed, batch["hist_len"])
+        _, (hist_embed, _) = self.hist_rnn(hist_embed, batch["hist_len"])
 
         fused_vector = torch.cat((img, ques_embed, hist_embed), 1)
         fused_vector = self.dropout(fused_vector)
