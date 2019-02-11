@@ -1,6 +1,5 @@
 import argparse
 import itertools
-import os
 
 from tensorboardX import SummaryWriter
 import torch
@@ -89,7 +88,7 @@ config = yaml.load(open(args.config_yml))
 if isinstance(args.gpu_ids, int): args.gpu_ids = [args.gpu_ids]
 device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
 
-# print config and args
+# Print config and args.
 print(yaml.dump(config, default_flow_style=False))
 for arg in vars(args):
     print("{:<20}: {}".format(arg, getattr(args, arg)))
@@ -113,16 +112,16 @@ val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
 
-# pass vocabulary to construct nn.Embedding
+# Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
 decoder = Decoder(config["model"], train_dataset.vocabulary)
 print("Encoder: {}".format(config["model"]["encoder"]))
 print("Decoder: {}".format(config["model"]["decoder"]))
 
-# share word embedding between encoder and decoder
+# Share word embedding between encoder and decoder.
 decoder.word_embed = encoder.word_embed
 
-# wrap encoder and decoder in a model
+# Wrap encoder and decoder in a model.
 model = EncoderDecoderModel(encoder, decoder).to(device)
 if -1 not in args.gpu_ids:
     model = nn.DataParallel(model, args.gpu_ids)
@@ -141,7 +140,7 @@ checkpoint_manager = CheckpointManager(model, optimizer, args.save_dirpath, conf
 sparse_metrics = SparseGTMetrics()
 ndcg = NDCG()
 
-# if loading from checkpoint, adjust start epoch and load parameters
+# If loading from checkpoint, adjust start epoch and load parameters.
 if args.load_pthpath == "":
     start_epoch = 0
 else:
@@ -169,14 +168,14 @@ else:
 global_iteration_step = start_epoch * iterations
 for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
+    # --------------------------------------------------------------------------------------------
+    #   ON EPOCH START  (combine dataloaders if training on train + val)
+    # --------------------------------------------------------------------------------------------
     if config["solver"]["training_splits"] == "trainval":
         combined_dataloader = itertools.chain(train_dataloader, val_dataloader)
     else:
         combined_dataloader = itertools.chain(train_dataloader)
 
-    # --------------------------------------------------------------------------------------------
-    #   ON EPOCH START  (combine dataloaders if training on train + val)
-    # --------------------------------------------------------------------------------------------
     print(f"\nTraining for epoch {epoch}:")
     for i, batch in enumerate(tqdm(combined_dataloader)):
         for key in batch:
@@ -199,7 +198,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
     # --------------------------------------------------------------------------------------------
     checkpoint_manager.step()
 
-    # validate and report automatic metrics
+    # Validate and report automatic metrics.
     if args.validate:
         print(f"\nValidation after epoch {epoch}:")
         for i, batch in enumerate(tqdm(val_dataloader)):

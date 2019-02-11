@@ -1,5 +1,4 @@
 import argparse
-from datetime import datetime
 import json
 import os
 
@@ -89,7 +88,7 @@ config = yaml.load(open(args.config_yml))
 if isinstance(args.gpu_ids, int): args.gpu_ids = [args.gpu_ids]
 device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
 
-# print config and args
+# Print config and args.
 print(yaml.dump(config, default_flow_style=False))
 for arg in vars(args):
     print("{:<20}: {}".format(arg, getattr(args, arg)))
@@ -112,16 +111,16 @@ val_dataloader = DataLoader(
     val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
 )
 
-# pass vocabulary to construct nn.Embedding
+# Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], val_dataset.vocabulary)
 decoder = Decoder(config["model"], val_dataset.vocabulary)
 print("Encoder: {}".format(config["model"]["encoder"]))
 print("Decoder: {}".format(config["model"]["decoder"]))
 
-# share word embedding between encoder and decoder
+# Share word embedding between encoder and decoder.
 decoder.word_embed = encoder.word_embed
 
-# wrap encoder and decoder in a model
+# Wrap encoder and decoder in a model.
 model = EncoderDecoderModel(encoder, decoder).to(device)
 if -1 not in args.gpu_ids:
     model = nn.DataParallel(model, args.gpu_ids)
@@ -152,8 +151,8 @@ for _, batch in enumerate(tqdm(val_dataloader)):
 
     ranks = scores_to_ranks(output)
     for i in range(len(batch["img_ids"])):
-        # cast into types explicitly to ensure no errors in schema
-        # round ids are 1-10, not 0-9
+        # Cast into types explicitly to ensure no errors in schema.
+        # Round ids are 1-10, not 0-9
         if args.split == "test":
             ranks_json.append({
                 "image_id": batch["img_ids"][i].item(),

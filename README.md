@@ -36,7 +36,7 @@ If you are a returning user (from Visual Dialog Challenge 2018), here are some k
 Setup and Dependencies
 ----------------------
 
-This starter code is implemented using PyTorch v1.0, and provides out of the box support with cuda 9 and CuDNN 7. 
+This starter code is implemented using PyTorch v1.0, and provides out of the box support with CUDA 9 and CuDNN 7. 
 There are two recommended ways to set up this codebase: Anaconda or Miniconda, and Docker.
 
 ### Anaconda or Miniconda

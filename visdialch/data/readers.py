@@ -15,7 +15,7 @@ import json
 from typing import Dict, List, Union
 
 import h5py
-# a bit slow, and just splits sentences to list of words, can be doable in VisDialJsonReader
+# A bit slow, and just splits sentences to list of words, can be doable in `DialogsReader`.
 from nltk.tokenize import word_tokenize
 from tqdm import tqdm
 
@@ -39,11 +39,11 @@ class DialogsReader(object):
             self.questions = visdial_data["data"]["questions"]
             self.answers = visdial_data["data"]["answers"]
 
-            # add empty question, answer at the end, useful for padding dialog rounds for test
+            # Add empty question, answer at the end, useful for padding dialog rounds for test.
             self.questions.append("")
             self.answers.append("")
 
-            # image_id serves as key for all three dicts here
+            # Image_id serves as key for all three dicts here.
             self.captions = {}
             self.dialogs = {}
             self.num_rounds = {}
@@ -51,15 +51,15 @@ class DialogsReader(object):
             for dialog_for_image in visdial_data["data"]["dialogs"]:
                 self.captions[dialog_for_image["image_id"]] = dialog_for_image["caption"]
 
-                # record original length of dialog, before padding
-                # 10 for train and val splits, 10 or less for test split
+                # Record original length of dialog, before padding.
+                # 10 for train and val splits, 10 or less for test split.
                 self.num_rounds[dialog_for_image["image_id"]] = len(dialog_for_image["dialog"])
 
-                # pad dialog at the end with empty question and answer pairs (for test split)
+                # Pad dialog at the end with empty question and answer pairs (for test split).
                 while len(dialog_for_image["dialog"]) < 10:
                     dialog_for_image["dialog"].append({"question": -1, "answer": -1})
 
-                # add empty answer /answer options if not provided (for test split)
+                # Add empty answer /answer options if not provided (for test split).
                 for i in range(len(dialog_for_image["dialog"])):
                     if "answer" not in dialog_for_image["dialog"][i]:
                         dialog_for_image["dialog"][i]["answer"] = -1
@@ -88,7 +88,7 @@ class DialogsReader(object):
         dialog_for_image = copy.copy(self.dialogs[image_id])
         num_rounds = self.num_rounds[image_id]
 
-        # replace question and answer indices with actual word tokens
+        # Replace question and answer indices with actual word tokens.
         for i in range(len(dialog_for_image)):
             dialog_for_image[i]["question"] = self.questions[dialog_for_image[i]["question"]]
             dialog_for_image[i]["answer"] = self.answers[dialog_for_image[i]["answer"]]
@@ -171,7 +171,7 @@ class ImageFeaturesHdfReader(object):
             self._split = features_hdf.attrs["split"]
             self.image_id_list = list(features_hdf["image_id"])
             # "features" is List[np.ndarray] if the dataset is loaded in-memory
-            # if not loaded in memory, then list of None
+            # If not loaded in memory, then list of None.
             self.features = [None] * len(self.image_id_list)
 
 
@@ -181,7 +181,7 @@ class ImageFeaturesHdfReader(object):
     def __getitem__(self, image_id: int):
         index = self.image_id_list.index(image_id)
         if self._in_memory:
-            # load features during first epoch, all not loaded together as it has a slow start
+            # Load features during first epoch, all not loaded together as it has a slow start.
             if self.features[index] is not None:
                 image_id_features = self.features[index]
             else:
@@ -189,7 +189,7 @@ class ImageFeaturesHdfReader(object):
                     image_id_features = features_hdf["features"][index]
                     self.features[index] = image_id_features
         else:
-            # read chunk from file everytime if not loaded in memory
+            # Read chunk from file everytime if not loaded in memory.
             with h5py.File(self.features_hdfpath, "r") as features_hdf:
                 image_id_features = features_hdf["features"][index]
 

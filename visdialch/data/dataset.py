@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 from torch.nn.functional import normalize
@@ -10,8 +10,13 @@ from visdialch.data.vocabulary import Vocabulary
 
 
 class VisDialDataset(Dataset):
+    """
+    A full representation of VisDial v1.0 (train/val/test) dataset. According to the appropriate
+    split, it returns dictionary of question, image, history, ground truth answer, answer options,
+    dense annotations etc.        
+    """
     def __init__(self,
-                 config: Dict[str, Union[int, str]],
+                 config: Dict[str, Any],
                  dialogs_jsonpath: str,
                  dense_annotations_jsonpath: Optional[str] = None,
                  overfit: bool = False,
@@ -29,7 +34,7 @@ class VisDialDataset(Dataset):
             config["word_counts_json"], min_count=config["vocab_min_count"]
         )
 
-        # initialize image features reader according to split
+        # Initialize image features reader according to split.
         image_features_hdfpath = config["image_features_train_h5"]
         if "val" in self.dialogs_reader.split:
             image_features_hdfpath = config["image_features_val_h5"]
@@ -38,7 +43,7 @@ class VisDialDataset(Dataset):
 
         self.hdf_reader = ImageFeaturesHdfReader(image_features_hdfpath, in_memory)
 
-        # keep a list of image_ids as primary keys to access data
+        # Keep a list of image_ids as primary keys to access data.
         self.image_ids = list(self.dialogs_reader.dialogs.keys())
         if overfit:
             self.image_ids = self.image_ids[:5]
@@ -51,22 +56,22 @@ class VisDialDataset(Dataset):
         return len(self.image_ids)
 
     def __getitem__(self, index):
-        # get image_id, which serves as a primary key for current instance
+        # Get image_id, which serves as a primary key for current instance.
         image_id = self.image_ids[index]
 
-        # get image features for this image_id using hdf reader
+        # Get image features for this image_id using hdf reader.
         image_features = self.hdf_reader[image_id]
         image_features = torch.tensor(image_features)
-        # normalize image features at zero-th dimension (since there's no batch dimension)
+        # Normalize image features at zero-th dimension (since there's no batch dimension).
         if self.config["img_norm"]:
             image_features = normalize(image_features, dim=0, p=2)
 
-        # retrieve instance for this image_id using json reader
+        # Retrieve instance for this image_id using json reader.
         visdial_instance = self.dialogs_reader[image_id]
         caption = visdial_instance["caption"]
         dialog = visdial_instance["dialog"]
 
-        # convert word tokens of caption, question, answer and answer options to integers
+        # Convert word tokens of caption, question, answer and answer options to integers.
         caption = self.vocabulary.to_indices(caption)
         for i in range(len(dialog)):
             dialog[i]["question"] = self.vocabulary.to_indices(dialog[i]["question"])
@@ -97,8 +102,8 @@ class VisDialDataset(Dataset):
         if "test" not in self.split:
             answer_indices = [dialog_round["gt_index"] for dialog_round in dialog]
 
-        # collect everything as tensors for ``collate_fn`` of dataloader to work seemlessly
-        # questions, history, etc. are converted to LongTensors, for nn.Embedding input
+        # Collect everything as tensors for ``collate_fn`` of dataloader to work seemlessly
+        # questions, history, etc. are converted to LongTensors, for nn.Embedding input.
         item = {}
         item["img_ids"] = torch.tensor(image_id).long()
         item["img_feat"] = image_features
@@ -112,7 +117,7 @@ class VisDialDataset(Dataset):
         if "test" not in self.split:
             item["ans_ind"] = torch.tensor(answer_indices).long()
 
-        # gather dense annotations
+        # Gather dense annotations.
         if "val" in self.split:
             dense_annotations = self.annotations_reader[image_id]
             item["gt_relevance"] = torch.tensor(dense_annotations["gt_relevance"]).float()
@@ -142,7 +147,7 @@ class VisDialDataset(Dataset):
             sequences[i] = sequences[i][: self.config["max_sequence_length"] - 1]
         sequence_lengths = [len(sequence) for sequence in sequences]
 
-        # pad all sequences to max_sequence_length
+        # Pad all sequences to max_sequence_length.
         maxpadded_sequences = torch.full(
             (len(sequences), self.config["max_sequence_length"]),
             fill_value=self.vocabulary.PAD_INDEX,
@@ -158,7 +163,7 @@ class VisDialDataset(Dataset):
                      caption: List[int],
                      questions: List[List[int]],
                      answers: List[List[int]]):
-        # allow double length of caption, equivalent to a concatenated QA pair
+        # Allow double length of caption, equivalent to a concatenated QA pair.
         caption = caption[: self.config["max_sequence_length"] * 2 - 1]
 
         for i in range(len(questions)):
@@ -167,18 +172,18 @@ class VisDialDataset(Dataset):
         for i in range(len(answers)):
             answers[i] = answers[i][: self.config["max_sequence_length"] - 1]
 
-        # history for first round is caption, else concatenated QA pair of previous round
+        # History for first round is caption, else concatenated QA pair of previous round.
         history = []
         history.append(caption)
         for question, answer in zip(questions, answers):
             history.append(question + answer + [self.vocabulary.EOS_INDEX])
-        # drop last entry from history (there's no eleventh question)
+        # Drop last entry from history (there's no eleventh question).
         history = history[:-1]
         max_history_length = self.config["max_sequence_length"] * 2
 
         if self.config.get("concat_history", False):
-            # concatenated_history has similar structure as history, except it contains
-            # concatenated QA pairs from previous rounds
+            # Concatenated_history has similar structure as history, except it contains
+            # concatenated QA pairs from previous rounds.
             concatenated_history = []
             concatenated_history.append(caption)
             for i in range(1, len(history)):

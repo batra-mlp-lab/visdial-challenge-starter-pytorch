@@ -16,7 +16,7 @@ class DiscriminativeDecoder(nn.Module):
                                   config["lstm_hidden_size"],
                                   batch_first=True)
 
-        # options are variable length padded sequences, use DynamicRNN
+        # Options are variable length padded sequences, use DynamicRNN.
         self.option_rnn = DynamicRNN(self.option_rnn)
 
     def forward(self, encoder_output, batch):
@@ -58,11 +58,11 @@ class DiscriminativeDecoder(nn.Module):
         )
         options_embed[nonzero_options_length_indices] = nonzero_options_embed
 
-        # Repeat encoder output for every option
+        # Repeat encoder output for every option.
         # shape: (batch_size, num_rounds, num_options, max_sequence_length)
         encoder_output = encoder_output.unsqueeze(2).repeat(1, 1, num_options, 1)
 
-        # shape now same as `options`, can calculate dot product similarity
+        # Shape now same as `options`, can calculate dot product similarity.
         # shape: (batch_size * num_rounds * num_options, lstm_hidden_state)
         encoder_output = encoder_output.view(
             batch_size * num_rounds * num_options, self.config["lstm_hidden_size"]
