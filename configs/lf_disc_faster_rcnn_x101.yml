@@ -27,12 +27,12 @@ model:
 solver:
   batch_size: 128 # 32 x num_gpus is a good rule of thumb
   num_epochs: 20
-  initial_lr: 0.001
+  initial_lr: 0.01
   training_splits: "train"  # "trainval"
   lr_gamma: 0.1
   lr_milestones: # epochs when lr —> lr * lr_gamma
-    - 3
-    - 5
+    - 4
     - 7
+    - 10
   warmup_factor: 0.2
   warmup_epochs: 1
