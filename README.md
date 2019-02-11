@@ -50,6 +50,7 @@ conda create -n visdialch python=3.6
 
 # activate the environment and install all dependencies
 conda activate visdialch
+cd visdial-challenge-starter-pytorch/
 pip install -r requirements.txt
 
 # install this codebase as a package in development version
