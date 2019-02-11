@@ -8,6 +8,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import yaml
+from bisect import bisect
 
 from visdialch.data.dataset import VisDialDataset
 from visdialch.encoders import Encoder
@@ -19,7 +20,7 @@ from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--config-yml", default="configs/lf_disc_faster_rcnn_x101_bs32.yml",
+    "--config-yml", default="configs/lf_disc_faster_rcnn_x101.yml",
     help="Path to a config file listing reader, model and solver parameters."
 )
 parser.add_argument(
@@ -76,6 +77,7 @@ torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
+    
 # ================================================================================================
 #   INPUT ARGUMENTS AND CONFIG
 # ================================================================================================
@@ -95,14 +97,14 @@ for arg in vars(args):
 
 
 # ================================================================================================
-#   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER
+#   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, SCHEDULER
 # ================================================================================================
 
 train_dataset = VisDialDataset(
     config["dataset"], args.train_json, overfit=args.overfit, in_memory=args.in_memory
 )
 train_dataloader = DataLoader(
-    train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
+    train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers, shuffle=True
 )
 
 val_dataset = VisDialDataset(
@@ -126,9 +128,31 @@ model = EncoderDecoderModel(encoder, decoder).to(device)
 if -1 not in args.gpu_ids:
     model = nn.DataParallel(model, args.gpu_ids)
 
+# Loss function.
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=config["solver"]["initial_lr"])
-scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=config["solver"]["lr_gamma"])
+
+if config["solver"]["training_splits"] == "trainval":
+    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
+else:
+    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
+
+
+def lr_lambda_fun(current_iteration: int) -> float:
+    """Returns a learning rate multiplier.
+
+    Till `warmup_epochs`, learning rate linearly increases to `initial_lr`,
+    and then gets multiplied by `lr_gamma` every time a milestone is crossed.
+    """
+    current_epoch = float(current_iteration) / iterations
+    if current_epoch <= config["solver"]["warmup_epochs"]:
+        alpha = current_epoch / float(config["solver"]["warmup_epochs"])
+        return config["solver"]["warmup_factor"] * (1. - alpha) + alpha
+    else:
+        idx = bisect(config["solver"]["lr_milestones"], current_epoch)
+        return pow(config["solver"]["lr_gamma"], idx)
+
+optimizer = optim.Adamax(model.parameters(), lr=config["solver"]["initial_lr"])
+scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_fun)
 
 
 # ================================================================================================
@@ -159,14 +183,10 @@ else:
 #   TRAINING LOOP
 # ================================================================================================
 
-# Forever increasing counter keeping track of iterations completed.
-if config["solver"]["training_splits"] == "trainval":
-    iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
-else:
-    iterations = len(train_dataset) // config["solver"]["batch_size"] + 1
-
+# Forever increasing counter keeping track of iterations completed (for tensorboard logging).
 global_iteration_step = start_epoch * iterations
-for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
+
+for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH START  (combine dataloaders if training on train + val)
@@ -189,9 +209,10 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
         summary_writer.add_scalar("train/loss", batch_loss, global_iteration_step)
         summary_writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_iteration_step)
-        if optimizer.param_groups[0]["lr"] > config["solver"]["minimum_lr"]:
-            scheduler.step()
+
+        scheduler.step(global_iteration_step)
         global_iteration_step += 1
+        torch.cuda.empty_cache()
 
     # --------------------------------------------------------------------------------------------
     #   ON EPOCH END  (checkpointing and validation)
@@ -200,6 +221,10 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
 
     # Validate and report automatic metrics.
     if args.validate:
+
+        # Switch dropout, batchnorm etc to the correct mode.
+        model.eval()
+
         print(f"\nValidation after epoch {epoch}:")
         for i, batch in enumerate(tqdm(val_dataloader)):
             for key in batch:
@@ -217,3 +242,6 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"] + 1):
         for metric_name, metric_value in all_metrics.items():
             print(f"{metric_name}: {metric_value}")
         summary_writer.add_scalars("metrics", all_metrics, global_iteration_step)
+
+        model.train()
+        torch.cuda.empty_cache()

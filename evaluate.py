@@ -18,7 +18,7 @@ from visdialch.utils.checkpointing import load_checkpoint
 
 parser = argparse.ArgumentParser("Evaluate and/or generate EvalAI submission file.")
 parser.add_argument(
-    "--config-yml", default="configs/lf_disc_faster_rcnn_x101_bs32.yml",
+    "--config-yml", default="configs/lf_disc_faster_rcnn_x101.yml",
     help="Path to a config file listing reader, model and optimization parameters."
 )
 parser.add_argument(
