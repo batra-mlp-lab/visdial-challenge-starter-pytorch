@@ -147,7 +147,7 @@ Performance on `v1.0 test-std` (trained on `v1.0` train + val):
 
 |  R@1   |  R@5   |  R@10  | MeanR  |  MRR   |  NDCG  |
 | ------ | ------ | ------ | ------ | ------ | ------
-| 0.4505 | 0.7588 | 0.8525 | 5.2095 | 0.5909 | 0.5123 |
+| 0.4617 | 0.7780 | 0.8730 | 4.7545 | 0.6041 | 0.5162 |
 
 
 Acknowledgements
@@ -166,7 +166,7 @@ Acknowledgements
 [9]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/visdial_1.0_word_counts_train.json
 [10]: https://visualdialog.org/data
 [11]: http://www.robots.ox.ac.uk/~vgg/research/very_deep/
-[12]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/lf_disc_faster_rcnn_x101_bs32_trainval.pth
+[12]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/lf_disc_faster_rcnn_x101_trainval.pth
 [13]: https://arxiv.org/abs/1611.08669
 [14]: https://www.github.com/batra-mlp-lab/visdial-rl
 [15]: https://www.github.com/batra-mlp-lab/visdial
