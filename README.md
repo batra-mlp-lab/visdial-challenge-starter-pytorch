@@ -4,7 +4,7 @@ Visual Dialog Challenge Starter Code
 PyTorch starter code for the [Visual Dialog Challenge 2019][1].
 
   * [Setup and Dependencies](#setup-and-dependencies)
-  * [Download Preprocessed Data](#download-preprocessed-data)
+  * [Download Data](#download-data)
   * [Training](#training)
   * [Evaluation](#evaluation)
   * [Pretrained Checkpoint](#pretrained-checkpoint)
@@ -82,18 +82,20 @@ nvidia-docker run -u $(id -u):$(id -g) \
 We recommend this development workflow, attaching the codebase as a volume would immediately reflect source code changes inside the container environment. We also recommend containing all the source code for data loading, models and other utilities inside `visdialch` directory. Since it is a setuptools-style package, it makes handling of absolute/relative imports and module resolving less painful. Scripts using `visdialch` can be created anywhere in the filesystem, as far as the current conda environment is active.
 
 
-Download Preprocessed Data
---------------------------
+Download Data
+-------------
 
-1. Get the word counts for VisDial v1.0 train split [here][9]. They are used to build the vocabulary.
+1. Download the VisDial v1.0 dialog json files from [here][7] and keep it under `$PROJECT_ROOT/data` directory, for default arguments to work effectively.
 
-2. We also provide pre-extracted image features of VisDial v1.0 images, using a Faster-RCNN pre-trained on Visual Genome. If you wish to extract your own image features, skip this step. Extracted features for v1.0 train, val and test are available for download at these links.
+2. Get the word counts for VisDial v1.0 train split [here][9]. They are used to build the vocabulary.
+
+3. We also provide pre-extracted image features of VisDial v1.0 images, using a Faster-RCNN pre-trained on Visual Genome. If you wish to extract your own image features, skip this step and download VIsDial v1.0 images from [here][7] instead. Extracted features for v1.0 train, val and test are available for download at these links.
 
   * [`features_faster_rcnn_x101_train.h5`](https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/features_faster_rcnn_x101_train.h5): Bottom-up features of 36 proposals from images of `train` split.
   * [`features_faster_rcnn_x101_val.h5`](https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/features_faster_rcnn_x101_val.h5): Bottom-up features of 36 proposals from images of `val` split.
   * [`features_faster_rcnn_x101_test.h5`](https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/features_faster_rcnn_x101_test.h5): Bottom-up features of 36 proposals from images of `test` split.
 
-3. We also provide pre-extracted FC7 features from VGG16, although the `v2019` of this codebase does not use them anymore.
+4. We also provide pre-extracted FC7 features from VGG16, although the `v2019` of this codebase does not use them anymore.
 
   * [`features_vgg16_fc7_train.h5`](https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/features_vgg16_fc7_train.h5): VGG16 FC7 features from images of `train` split.
   * [`features_vgg16_fc7_val.h5`](https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/features_vgg16_fc7_val.h5): VGG16 FC7 features from images of `val` split.
@@ -163,6 +165,7 @@ Acknowledgements
 [4]: http://images.cocodataset.org/zips/val2014.zip
 [5]: https://www.github.com/lanpa/tensorboardX
 [6]: https://arxiv.org/abs/1707.07998
+[7]: https://visualdialog.org/data
 [9]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/visdial_1.0_word_counts_train.json
 [10]: https://visualdialog.org/data
 [11]: http://www.robots.ox.ac.uk/~vgg/research/very_deep/
