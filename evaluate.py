@@ -101,14 +101,20 @@ for arg in vars(args):
 if args.split == "val":
     val_dataset = VisDialDataset(
         config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit,
-        in_memory=args.in_memory
+        in_memory=args.in_memory,
+        return_options=True,
+        add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
     )
 else:
     val_dataset = VisDialDataset(
-        config["dataset"], args.test_json, overfit=args.overfit, in_memory=args.in_memory
+        config["dataset"], args.test_json, overfit=args.overfit, in_memory=args.in_memory,
+        return_options=True,
+        add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
     )
 val_dataloader = DataLoader(
-    val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
+    val_dataset,
+    batch_size=config["solver"]["batch_size"] if config["model"]["decoder"] == "disc" else 5,
+    num_workers=args.cpu_workers
 )
 
 # Pass vocabulary to construct Embedding layer.
