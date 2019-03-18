@@ -21,6 +21,9 @@ If you use this code in your research, please consider citing:
 }
 ```
 
+[![DOI](https://zenodo.org/badge/140210239.svg)](https://zenodo.org/badge/latestdoi/140210239)
+
+
 What's new with `v2019`?
 ------------------------
 
