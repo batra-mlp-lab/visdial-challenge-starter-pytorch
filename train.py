@@ -77,7 +77,7 @@ torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
-    
+
 # ================================================================================================
 #   INPUT ARGUMENTS AND CONFIG
 # ================================================================================================
@@ -101,17 +101,22 @@ for arg in vars(args):
 # ================================================================================================
 
 train_dataset = VisDialDataset(
-    config["dataset"], args.train_json, overfit=args.overfit, in_memory=args.in_memory
+    config["dataset"], args.train_json, overfit=args.overfit, in_memory=args.in_memory,
+    return_options=True if config["model"]["decoder"] == "disc" else False,
+    add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
 )
 train_dataloader = DataLoader(
     train_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers, shuffle=True
 )
 
 val_dataset = VisDialDataset(
-    config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit, in_memory=args.in_memory
+    config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit, in_memory=args.in_memory,
+    return_options=True,
+    add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
 )
 val_dataloader = DataLoader(
-    val_dataset, batch_size=config["solver"]["batch_size"], num_workers=args.cpu_workers
+    val_dataset, batch_size=config["solver"]["batch_size"] if config["model"]["decoder"] == "disc" else 5,
+    num_workers=args.cpu_workers
 )
 
 # Pass vocabulary to construct Embedding layer.
@@ -129,7 +134,12 @@ if -1 not in args.gpu_ids:
     model = nn.DataParallel(model, args.gpu_ids)
 
 # Loss function.
-criterion = nn.CrossEntropyLoss()
+if config["model"]["decoder"] == "disc":
+    criterion = nn.CrossEntropyLoss()
+elif config["model"]["decoder"] == "gen":
+    criterion = nn.CrossEntropyLoss(ignore_index=train_dataset.vocabulary.PAD_INDEX)
+else:
+    raise NotImplementedError
 
 if config["solver"]["training_splits"] == "trainval":
     iterations = (len(train_dataset) + len(val_dataset)) // config["solver"]["batch_size"] + 1
@@ -203,7 +213,8 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
         optimizer.zero_grad()
         output = model(batch)
-        batch_loss = criterion(output.view(-1, output.size(-1)), batch["ans_ind"].view(-1))
+        target = batch["ans_ind"] if config["model"]["decoder"] == "disc" else batch["ans_out"]
+        batch_loss = criterion(output.view(-1, output.size(-1)), target.view(-1))
         batch_loss.backward()
         optimizer.step()
 

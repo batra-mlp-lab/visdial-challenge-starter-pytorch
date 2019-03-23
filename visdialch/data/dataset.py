@@ -13,16 +13,20 @@ class VisDialDataset(Dataset):
     """
     A full representation of VisDial v1.0 (train/val/test) dataset. According to the appropriate
     split, it returns dictionary of question, image, history, ground truth answer, answer options,
-    dense annotations etc.        
+    dense annotations etc.
     """
     def __init__(self,
                  config: Dict[str, Any],
                  dialogs_jsonpath: str,
                  dense_annotations_jsonpath: Optional[str] = None,
                  overfit: bool = False,
-                 in_memory: bool = False):
+                 in_memory: bool = False,
+                 return_options: bool = True,
+                 add_boundary_toks: bool = False):
         super().__init__()
         self.config = config
+        self.return_options = return_options
+        self.add_boundary_toks = add_boundary_toks
         self.dialogs_reader = DialogsReader(dialogs_jsonpath)
 
         if "val" in self.split and dense_annotations_jsonpath is not None:
@@ -75,12 +79,21 @@ class VisDialDataset(Dataset):
         caption = self.vocabulary.to_indices(caption)
         for i in range(len(dialog)):
             dialog[i]["question"] = self.vocabulary.to_indices(dialog[i]["question"])
-            dialog[i]["answer"] = self.vocabulary.to_indices(dialog[i]["answer"])
+            if self.add_boundary_toks:
+                dialog[i]["answer"] = self.vocabulary.to_indices([self.vocabulary.SOS_TOKEN] + dialog[i]["answer"] + [self.vocabulary.EOS_TOKEN])
+            else:
+                dialog[i]["answer"] = self.vocabulary.to_indices(dialog[i]["answer"])
 
-            for j in range(len(dialog[i]["answer_options"])):
-                dialog[i]["answer_options"][j] = self.vocabulary.to_indices(
-                    dialog[i]["answer_options"][j]
-                )
+            if self.return_options:
+                for j in range(len(dialog[i]["answer_options"])):
+                    if self.add_boundary_toks:
+                        dialog[i]["answer_options"][j] = self.vocabulary.to_indices(
+                            [self.vocabulary.SOS_TOKEN] + dialog[i]["answer_options"][j] + [self.vocabulary.EOS_TOKEN]
+                        )
+                    else:
+                        dialog[i]["answer_options"][j] = self.vocabulary.to_indices(
+                            dialog[i]["answer_options"][j]
+                        )
 
         questions, question_lengths = self._pad_sequences(
             [dialog_round["question"] for dialog_round in dialog]
@@ -90,32 +103,60 @@ class VisDialDataset(Dataset):
             [dialog_round["question"] for dialog_round in dialog],
             [dialog_round["answer"] for dialog_round in dialog]
         )
+        answers_in, answer_lengths = self._pad_sequences(
+            [dialog_round["answer"][:-1] for dialog_round in dialog]
+        )
+        answers_out, _ = self._pad_sequences(
+            [dialog_round["answer"][1:] for dialog_round in dialog]
+        )
 
-        answer_options = []
-        answer_option_lengths = []
-        for dialog_round in dialog:
-            options, option_lengths = self._pad_sequences(dialog_round["answer_options"])
-            answer_options.append(options)
-            answer_option_lengths.append(option_lengths)
-        answer_options = torch.stack(answer_options, 0)
-
-        if "test" not in self.split:
-            answer_indices = [dialog_round["gt_index"] for dialog_round in dialog]
-
-        # Collect everything as tensors for ``collate_fn`` of dataloader to work seemlessly
+        # Collect everything as tensors for ``collate_fn`` of dataloader to work seamlessly
         # questions, history, etc. are converted to LongTensors, for nn.Embedding input.
         item = {}
         item["img_ids"] = torch.tensor(image_id).long()
         item["img_feat"] = image_features
         item["ques"] = questions.long()
         item["hist"] = history.long()
-        item["opt"] = answer_options.long()
+        item["ans_in"] = answers_in.long()
+        item["ans_out"] = answers_out.long()
         item["ques_len"] = torch.tensor(question_lengths).long()
         item["hist_len"] = torch.tensor(history_lengths).long()
-        item["opt_len"] = torch.tensor(answer_option_lengths).long()
+        item["ans_len"] = torch.tensor(answer_lengths).long()
         item["num_rounds"] = torch.tensor(visdial_instance["num_rounds"]).long()
-        if "test" not in self.split:
-            item["ans_ind"] = torch.tensor(answer_indices).long()
+
+        if self.return_options:
+            if self.add_boundary_toks:
+                answer_options_in, answer_options_out = [], []
+                answer_option_lengths = []
+                for dialog_round in dialog:
+                    options, option_lengths = self._pad_sequences([option[:-1] for option in dialog_round["answer_options"]])
+                    answer_options_in.append(options)
+
+                    options, _ = self._pad_sequences([option[1:] for option in dialog_round["answer_options"]])
+                    answer_options_out.append(options)
+
+                    answer_option_lengths.append(option_lengths)
+                answer_options_in = torch.stack(answer_options_in, 0)
+                answer_options_out = torch.stack(answer_options_out, 0)
+
+                item["opt_in"] = answer_options_in.long()
+                item["opt_out"] = answer_options_out.long()
+                item["opt_len"] = torch.tensor(answer_option_lengths).long()
+            else:
+                answer_options = []
+                answer_option_lengths = []
+                for dialog_round in dialog:
+                    options, option_lengths = self._pad_sequences(dialog_round["answer_options"])
+                    answer_options.append(options)
+                    answer_option_lengths.append(option_lengths)
+                answer_options = torch.stack(answer_options, 0)
+
+                item["opt"] = answer_options.long()
+                item["opt_len"] = torch.tensor(answer_option_lengths).long()
+
+            if "test" not in self.split:
+                answer_indices = [dialog_round["gt_index"] for dialog_round in dialog]
+                item["ans_ind"] = torch.tensor(answer_indices).long()
 
         # Gather dense annotations.
         if "val" in self.split:
