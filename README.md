@@ -108,7 +108,7 @@ Download Data
 Training
 --------
 
-This codebase supports discriminative decoding only; read more [here][16]. For reference, we have Late Fusion Encoder from the Visual Dialog paper.
+This codebase supports both generative and discriminative decoding; read more [here][16]. For reference, we have Late Fusion Encoder from the Visual Dialog paper.
 
 We provide a training script which accepts arguments as config files. The config file should contain arguments which are specific to a particular experiment, such as those defining model architecture, or optimization hyperparameters. Other arguments such as GPU ids, or number of CPU workers should be declared in the script and passed in as argparse-style arguments.
 
@@ -143,16 +143,15 @@ This will generate an EvalAI submission file, and report metrics from the [Visua
 The metrics reported here would be the same as those reported through EvalAI by making a submission in `val` phase. To generate a submission file for `test-std` or `test-challenge` phase, replace `--split val` with `--split test`.
 
 
-Pretrained Checkpoint
----------------------
-
-Pretrained checkpoint of Late Fusion Encoder - Discriminative Decoder model is available [here][12] (epoch 10). The config provided with this starter code was used to train this model (`trainval` mode).
+Results and pretrained checkpoints
+----------------------------------
 
 Performance on `v1.0 test-std` (trained on `v1.0` train + val):
 
-|  R@1   |  R@5   |  R@10  | MeanR  |  MRR   |  NDCG  |
-| ------ | ------ | ------ | ------ | ------ | ------
-| 0.4617 | 0.7780 | 0.8730 | 4.7545 | 0.6041 | 0.5162 |
+  Model  |  R@1   |  R@5   |  R@10  | MeanR  |  MRR   |  NDCG  |
+ ------- | ------ | ------ | ------ | ------ | ------ | ------ |
+[lf-disc-faster-rcnn-x101][12] | 0.4617 | 0.7780 | 0.8730 |  4.7545| 0.6041 | 0.5162 |
+[lf-gen-faster-rcnn-x101][20]  | 0.3620 | 0.5640 | 0.6340 | 19.4458| 0.4657 | 0.5421 |
 
 
 Acknowledgements
@@ -180,3 +179,4 @@ Acknowledgements
 [17]: https://www.github.com/allenai/allennlp
 [18]: https://www.github.com/nvidia/nvidia-docker
 [19]: https://github.com/batra-mlp-lab/visdial-challenge-starter-pytorch/blob/master/visdialch/utils/checkpointing.py
+[20]: https://s3.amazonaws.com/visual-dialog/data/v1.0/2019/lf_gen_faster_rcnn_x101_train.pth
