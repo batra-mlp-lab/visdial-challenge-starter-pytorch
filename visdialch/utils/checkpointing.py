@@ -12,7 +12,6 @@ this directory.
 That said, always run your experiments after committing your changes,
 this doesn't account for untracked or staged, but uncommitted changes.
 """
-import copy
 from pathlib import Path
 from subprocess import PIPE, Popen
 import warnings
@@ -55,16 +54,23 @@ class CheckpointManager(object):
     ...     ckpt_manager.step()
     """
 
-    def __init__(self, model, optimizer, checkpoint_dirpath, step_size=1,
-                 last_epoch=-1, **kwargs):
+    def __init__(
+        self,
+        model,
+        optimizer,
+        checkpoint_dirpath,
+        step_size=1,
+        last_epoch=-1,
+        **kwargs,
+    ):
 
         if not isinstance(model, nn.Module):
-            raise TypeError("{} is not a Module".format(
-                type(model).__name__))
+            raise TypeError("{} is not a Module".format(type(model).__name__))
 
         if not isinstance(optimizer, optim.Optimizer):
-            raise TypeError("{} is not an Optimizer".format(
-                type(optimizer).__name__))
+            raise TypeError(
+                "{} is not an Optimizer".format(type(optimizer).__name__)
+            )
 
         self.model = model
         self.optimizer = optimizer
@@ -89,8 +95,9 @@ class CheckpointManager(object):
         commit_sha_filepath = self.ckpt_dirpath / f".commit-{commit_sha}"
         commit_sha_filepath.touch()
         yaml.dump(
-            config, open(str(self.ckpt_dirpath / "config.yml"), "w"),
-            default_flow_style=False
+            config,
+            open(str(self.ckpt_dirpath / "config.yml"), "w"),
+            default_flow_style=False,
         )
 
     def step(self, epoch=None):
@@ -104,7 +111,7 @@ class CheckpointManager(object):
             torch.save(
                 {
                     "model": self._model_state_dict(),
-                    "optimizer": self.optimizer.state_dict()
+                    "optimizer": self.optimizer.state_dict(),
                 },
                 self.ckpt_dirpath / f"checkpoint_{self.last_epoch}.pth",
             )
@@ -146,7 +153,9 @@ def load_checkpoint(checkpoint_pthpath):
     checkpoint_commit_sha = list(checkpoint_dirpath.glob(".commit-*"))
 
     if len(checkpoint_commit_sha) == 0:
-        raise UserWarning("Commit SHA was not recorded while saving checkpoints.")
+        raise UserWarning(
+            "Commit SHA was not recorded while saving checkpoints."
+        )
     else:
         # verify commit sha, raise warning if it doesn't match
         commit_sha_subprocess = Popen(

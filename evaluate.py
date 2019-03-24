@@ -16,77 +16,105 @@ from visdialch.model import EncoderDecoderModel
 from visdialch.utils.checkpointing import load_checkpoint
 
 
-parser = argparse.ArgumentParser("Evaluate and/or generate EvalAI submission file.")
-parser.add_argument(
-    "--config-yml", default="configs/lf_disc_faster_rcnn_x101.yml",
-    help="Path to a config file listing reader, model and optimization parameters."
+parser = argparse.ArgumentParser(
+    "Evaluate and/or generate EvalAI submission file."
 )
 parser.add_argument(
-    "--split", default="val", choices=["val", "test"],
-    help="Which split to evaluate upon."
+    "--config-yml",
+    default="configs/lf_disc_faster_rcnn_x101.yml",
+    help="Path to a config file listing reader, model and optimization "
+    "parameters.",
 )
 parser.add_argument(
-    "--val-json", default="data/visdial_1.0_val.json",
-    help="Path to VisDial v1.0 val data. This argument doesn't work when --split=test."
+    "--split",
+    default="val",
+    choices=["val", "test"],
+    help="Which split to evaluate upon.",
 )
 parser.add_argument(
-    "--val-dense-json", default="data/visdial_1.0_val_dense_annotations.json",
-    help="Path to VisDial v1.0 val dense annotations (if evaluating on val split)."
-         "This argument doesn't work when --split=test."
+    "--val-json",
+    default="data/visdial_1.0_val.json",
+    help="Path to VisDial v1.0 val data. This argument doesn't work when "
+    "--split=test.",
 )
 parser.add_argument(
-    "--test-json", default="data/visdial_1.0_test.json",
-    help="Path to VisDial v1.0 test data. This argument doesn't work when --split=val."
+    "--val-dense-json",
+    default="data/visdial_1.0_val_dense_annotations.json",
+    help="Path to VisDial v1.0 val dense annotations (if evaluating on val "
+    "split). This argument doesn't work when --split=test.",
+)
+parser.add_argument(
+    "--test-json",
+    default="data/visdial_1.0_test.json",
+    help="Path to VisDial v1.0 test data. This argument doesn't work when "
+    "--split=val.",
 )
 
 parser.add_argument_group("Evaluation related arguments")
 parser.add_argument(
-    "--load-pthpath", default="checkpoints/checkpoint_xx.pth",
-    help="Path to .pth file of pretrained checkpoint."
+    "--load-pthpath",
+    default="checkpoints/checkpoint_xx.pth",
+    help="Path to .pth file of pretrained checkpoint.",
 )
 
-parser.add_argument_group("Arguments independent of experiment reproducibility")
-parser.add_argument(
-    "--gpu-ids", nargs="+", type=int, default=-1,
-    help="List of ids of GPUs to use."
+parser.add_argument_group(
+    "Arguments independent of experiment reproducibility"
 )
 parser.add_argument(
-    "--cpu-workers", type=int, default=4,
-    help="Number of CPU workers for reading data."
+    "--gpu-ids",
+    nargs="+",
+    type=int,
+    default=-1,
+    help="List of ids of GPUs to use.",
 )
 parser.add_argument(
-    "--overfit", action="store_true",
-    help="Overfit model on 5 examples, meant for debugging."
+    "--cpu-workers",
+    type=int,
+    default=4,
+    help="Number of CPU workers for reading data.",
 )
 parser.add_argument(
-    "--in-memory", action="store_true",
-    help="Load the whole dataset and pre-extracted image features in memory. Use only in "
-         "presence of large RAM, atleast few tens of GBs."
+    "--overfit",
+    action="store_true",
+    help="Overfit model on 5 examples, meant for debugging.",
+)
+parser.add_argument(
+    "--in-memory",
+    action="store_true",
+    help="Load the whole dataset and pre-extracted image features in memory. "
+    "Use only in presence of large RAM, atleast few tens of GBs.",
 )
 
 parser.add_argument_group("Submission related arguments")
 parser.add_argument(
-    "--save-ranks-path", default="logs/ranks.json",
-    help="Path (json) to save ranks, in a EvalAI submission format."
+    "--save-ranks-path",
+    default="logs/ranks.json",
+    help="Path (json) to save ranks, in a EvalAI submission format.",
 )
 
-# for reproducibility - refer https://pytorch.org/docs/stable/notes/randomness.html
+# For reproducibility.
+# Refer https://pytorch.org/docs/stable/notes/randomness.html
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
-# ================================================================================================
+# =============================================================================
 #   INPUT ARGUMENTS AND CONFIG
-# ================================================================================================
+# =============================================================================
 
 args = parser.parse_args()
 
 # keys: {"dataset", "model", "solver"}
 config = yaml.load(open(args.config_yml))
 
-if isinstance(args.gpu_ids, int): args.gpu_ids = [args.gpu_ids]
-device = torch.device("cuda", args.gpu_ids[0]) if args.gpu_ids[0] >= 0 else torch.device("cpu")
+if isinstance(args.gpu_ids, int):
+    args.gpu_ids = [args.gpu_ids]
+device = (
+    torch.device("cuda", args.gpu_ids[0])
+    if args.gpu_ids[0] >= 0
+    else torch.device("cpu")
+)
 
 # Print config and args.
 print(yaml.dump(config, default_flow_style=False))
@@ -94,27 +122,39 @@ for arg in vars(args):
     print("{:<20}: {}".format(arg, getattr(args, arg)))
 
 
-# ================================================================================================
+# =============================================================================
 #   SETUP DATASET, DATALOADER, MODEL
-# ================================================================================================
+# =============================================================================
 
 if args.split == "val":
     val_dataset = VisDialDataset(
-        config["dataset"], args.val_json, args.val_dense_json, overfit=args.overfit,
+        config["dataset"],
+        args.val_json,
+        args.val_dense_json,
+        overfit=args.overfit,
         in_memory=args.in_memory,
         return_options=True,
-        add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
+        add_boundary_toks=False
+        if config["model"]["decoder"] == "disc"
+        else True,
     )
 else:
     val_dataset = VisDialDataset(
-        config["dataset"], args.test_json, overfit=args.overfit, in_memory=args.in_memory,
+        config["dataset"],
+        args.test_json,
+        overfit=args.overfit,
+        in_memory=args.in_memory,
         return_options=True,
-        add_boundary_toks=False if config["model"]["decoder"] == "disc" else True
+        add_boundary_toks=False
+        if config["model"]["decoder"] == "disc"
+        else True,
     )
 val_dataloader = DataLoader(
     val_dataset,
-    batch_size=config["solver"]["batch_size"] if config["model"]["decoder"] == "disc" else 5,
-    num_workers=args.cpu_workers
+    batch_size=config["solver"]["batch_size"]
+    if config["model"]["decoder"] == "disc"
+    else 5,
+    num_workers=args.cpu_workers,
 )
 
 # Pass vocabulary to construct Embedding layer.
@@ -142,9 +182,9 @@ print("Loaded model from {}".format(args.load_pthpath))
 sparse_metrics = SparseGTMetrics()
 ndcg = NDCG()
 
-# ================================================================================================
+# =============================================================================
 #   EVALUATION LOOP
-# ================================================================================================
+# =============================================================================
 
 model.eval()
 ranks_json = []
@@ -160,23 +200,32 @@ for _, batch in enumerate(tqdm(val_dataloader)):
         # Cast into types explicitly to ensure no errors in schema.
         # Round ids are 1-10, not 0-9
         if args.split == "test":
-            ranks_json.append({
-                "image_id": batch["img_ids"][i].item(),
-                "round_id": int(batch["num_rounds"][i].item()),
-                "ranks": [rank.item() for rank in ranks[i][batch["num_rounds"][i] - 1]]
-            })
+            ranks_json.append(
+                {
+                    "image_id": batch["img_ids"][i].item(),
+                    "round_id": int(batch["num_rounds"][i].item()),
+                    "ranks": [
+                        rank.item()
+                        for rank in ranks[i][batch["num_rounds"][i] - 1]
+                    ],
+                }
+            )
         else:
             for j in range(batch["num_rounds"][i]):
-                ranks_json.append({
-                    "image_id": batch["img_ids"][i].item(),
-                    "round_id": int(j + 1),
-                    "ranks": [rank.item() for rank in ranks[i][j]]
-                })
+                ranks_json.append(
+                    {
+                        "image_id": batch["img_ids"][i].item(),
+                        "round_id": int(j + 1),
+                        "ranks": [rank.item() for rank in ranks[i][j]],
+                    }
+                )
 
     if args.split == "val":
         sparse_metrics.observe(output, batch["ans_ind"])
         if "gt_relevance" in batch:
-            output = output[torch.arange(output.size(0)), batch["round_id"] - 1, :]
+            output = output[
+                torch.arange(output.size(0)), batch["round_id"] - 1, :
+            ]
             ndcg.observe(output, batch["gt_relevance"])
 
 if args.split == "val":

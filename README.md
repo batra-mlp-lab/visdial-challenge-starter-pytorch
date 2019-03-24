@@ -29,8 +29,8 @@ What's new with `v2019`?
 
 If you are a returning user (from Visual Dialog Challenge 2018), here are some key highlights about our offerings in `v2019` of this starter code:
 
-1. _Almost_ a complete rewrite of `v2018`, which increased speed, readability, modularity and extensibility. 
-2. Multi-GPU support - try out specifying GPU ids to train/evaluate scripts as: `--gpu-ids 0 1 2 3` 
+1. _Almost_ a complete rewrite of `v2018`, which increased speed, readability, modularity and extensibility.
+2. Multi-GPU support - try out specifying GPU ids to train/evaluate scripts as: `--gpu-ids 0 1 2 3`
 3. Docker support - we provide a Dockerfile which can help you set up all the dependencies with ease.
 4. Stronger baseline - our Late Fusion Encoder is equipped with [Bottom-up Top-Down attention][6]. We also provide pre-extracted image features (links below).
 5. Minimal pre-processed data - no requirement to download tens of pre-processed data files anymore (were typically referred as `visdial_data.h5` and `visdial_params.json`).
@@ -39,7 +39,7 @@ If you are a returning user (from Visual Dialog Challenge 2018), here are some k
 Setup and Dependencies
 ----------------------
 
-This starter code is implemented using PyTorch v1.0, and provides out of the box support with CUDA 9 and CuDNN 7. 
+This starter code is implemented using PyTorch v1.0, and provides out of the box support with CUDA 9 and CuDNN 7.
 There are two recommended ways to set up this codebase: Anaconda or Miniconda, and Docker.
 
 ### Anaconda or Miniconda

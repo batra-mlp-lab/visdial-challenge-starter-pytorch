@@ -3,8 +3,7 @@ import glob
 import os
 
 import cv2  # must import before importing caffe2 due to bug in cv2
-from caffe2.proto import caffe2_pb2
-from caffe2.python import core, workspace
+from caffe2.python import workspace
 from tqdm import tqdm
 import h5py
 import numpy as np
@@ -23,14 +22,15 @@ c2_utils.import_detectron_ops()
 cv2.ocl.setUseOpenCL(False)
 
 parser = argparse.ArgumentParser(
-    description="Extract bottom-up features from a model trained by Detectron")
+    description="Extract bottom-up features from a model trained by Detectron"
+)
 parser.add_argument(
     "--image-root",
     nargs="+",
     help="Path to a directory containing COCO/VisDial images. Note that this "
-         "directory must have images, and not sub-directories of splits. "
-         "Each HDF file should contain features from a single split."
-         "Multiple paths are supported to account for VisDial v1.0 train."
+    "directory must have images, and not sub-directories of splits. "
+    "Each HDF file should contain features from a single split."
+    "Multiple paths are supported to account for VisDial v1.0 train.",
 )
 parser.add_argument(
     "--config",
@@ -51,29 +51,29 @@ parser.add_argument(
     "--max-boxes",
     help="Maximum number of bounding box proposals per image",
     type=int,
-    default=36
+    default=36,
 )
 parser.add_argument(
     "--feat-name",
     help="The name of the layer to extract features from.",
-    default="fc7"
+    default="fc7",
 )
 parser.add_argument(
     "--feat-dims",
     help="Length of bottom-upfeature vectors.",
     type=int,
-    default=2048
+    default=2048,
 )
 parser.add_argument(
     "--split",
     choices=["train", "val", "test"],
-    help="Which split is being processed."
+    help="Which split is being processed.",
 )
 parser.add_argument(
     "--gpu-id",
     help="The GPU id to use (-1 for CPU execution)",
     type=int,
-    default=0
+    default=0,
 )
 
 
@@ -95,19 +95,21 @@ def detect_image(detectron_model, image, args):
     np.ndarray, np.ndarray, np.ndarray, np.ndarray
         Object bounding boxes, classes, confidence and features.
     """
-    
+
     with c2_utils.NamedCudaScope(args.gpu_id):
         scores, cls_boxes, im_scale = detectron_test.im_detect_bbox(
             detectron_model,
             image,
             detectron_config.TEST.SCALE,
             detectron_config.TEST.MAX_SIZE,
-            boxes=None
+            boxes=None,
         )
         num_proposals = scores.shape[0]
 
         rois = workspace.FetchBlob(f"gpu_{args.gpu_id}/rois")
-        obj_features = workspace.FetchBlob(f"gpu_{args.gpu_id}/{args.feat_name}")
+        obj_features = workspace.FetchBlob(
+            f"gpu_{args.gpu_id}/{args.feat_name}"
+        )
 
         cls_boxes = rois[:, 1:5] / im_scale
         max_conf = np.zeros((num_proposals,), dtype=np.float32)
@@ -116,15 +118,17 @@ def detect_image(detectron_model, image, args):
 
         for cls_ind in range(1, detectron_config.MODEL.NUM_CLASSES):
             cls_scores = scores[:, cls_ind]
-            dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(np.float32)
+            dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(
+                np.float32
+            )
             keep = np.array(detectron_nms(dets, detectron_config.TEST.NMS))
             idxs_update = np.where(cls_scores[keep] > max_conf[keep])
             keep_idxs = keep[idxs_update]
             max_conf[keep_idxs] = cls_scores[keep_idxs]
             max_cls[keep_idxs] = cls_ind
-            max_box[keep_idxs] = dets[keep_idxs][:,:4]
+            max_box[keep_idxs] = dets[keep_idxs][:, :4]
 
-        keep_boxes = np.argsort(max_conf)[::-1][:args.max_boxes]
+        keep_boxes = np.argsort(max_conf)[::-1][: args.max_boxes]
         obj_boxes = max_box[keep_boxes, :]
         obj_classes = max_cls[keep_boxes]
         obj_confidence = max_conf[keep_boxes]
@@ -138,7 +142,7 @@ def image_id_from_path(image_path):
     Parameters
     ----------
     image_path : str
-        Path to image, for example: coco_train2014/COCO_train2014/000000123456.jpg
+        Path to image, e.g.: coco_train2014/COCO_train2014/000000123456.jpg
 
     Returns
     -------
@@ -165,29 +169,34 @@ def main(args):
 
     # override some config options and validate the config
     detectron_config.NUM_GPUS = 1
-    detectron_config.TRAIN.CPP_RPN = 'none'
+    detectron_config.TRAIN.CPP_RPN = "none"
     assert_and_infer_cfg(cache_urls=False)
 
     # initialize model
-    detectron_model = infer_engine.initialize_model_from_cfg(args.weights, args.gpu_id)
+    detectron_model = infer_engine.initialize_model_from_cfg(
+        args.weights, args.gpu_id
+    )
 
     # list of paths (example: "coco_train2014/COCO_train2014_000000123456.jpg")
     image_paths = []
     for image_root in args.image_root:
-        image_paths.extend([os.path.join(image_root, name)
-                            for name in glob.glob(os.path.join(image_root, "*.jpg"))
-                            if name not in {".", ".."}])
+        image_paths.extend(
+            [
+                os.path.join(image_root, name)
+                for name in glob.glob(os.path.join(image_root, "*.jpg"))
+                if name not in {".", ".."}
+            ]
+        )
 
     # create an output HDF to save extracted features
     save_h5 = h5py.File(args.save_path, "w")
-    image_ids_h5d = save_h5.create_dataset(
-        "image_ids", (len(image_paths), )
-    )
+    image_ids_h5d = save_h5.create_dataset("image_ids", (len(image_paths),))
 
     # 'features' is a chunked dataset, each chunk holds features from one image
     features_h5d = save_h5.create_dataset(
-        "features", (len(image_paths), args.max_boxes, args.feat_dims),
-        chunks=(1, args.max_boxes, args.feat_dims)
+        "features",
+        (len(image_paths), args.max_boxes, args.feat_dims),
+        chunks=(1, args.max_boxes, args.feat_dims),
     )
 
     for idx, image_path in tqdm(enumerate(image_paths)):
@@ -196,10 +205,15 @@ def main(args):
 
             image = cv2.imread(image_path)
             # we only care about features, not classes
-            _, _, _, bottomup_features = detect_image(detectron_model, image, args)
+            _, _, _, bottomup_features = detect_image(
+                detectron_model, image, args
+            )
             features_h5d[idx] = bottomup_features
-        except:
-            print(f"\nWarning: features from {idx}, {image_path} failed to extract.\n")
+        except:  # noqa: E722
+            print(
+                f"\nWarning: features from {idx}, {image_path} failed to "
+                "extract.\n"
+            )
     # set current split name in attributrs of file, for tractability
     save_h5.attrs["split"] = args.split
     save_h5.close()
@@ -207,6 +221,6 @@ def main(args):
 
 if __name__ == "__main__":
     # set higher log level to prevent terminal spam
-    workspace.GlobalInit(['caffe2', '--caffe2_log_level=3'])
+    workspace.GlobalInit(["caffe2", "--caffe2_log_level=3"])
     args = parser.parse_args()
     main(args)
