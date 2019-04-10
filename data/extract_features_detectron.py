@@ -51,7 +51,7 @@ parser.add_argument(
     "--max-boxes",
     help="Maximum number of bounding box proposals per image",
     type=int,
-    default=36,
+    default=100
 )
 parser.add_argument(
     "--feat-name",
@@ -96,44 +96,43 @@ def detect_image(detectron_model, image, args):
         Object bounding boxes, classes, confidence and features.
     """
 
-    with c2_utils.NamedCudaScope(args.gpu_id):
-        scores, cls_boxes, im_scale = detectron_test.im_detect_bbox(
-            detectron_model,
-            image,
-            detectron_config.TEST.SCALE,
-            detectron_config.TEST.MAX_SIZE,
-            boxes=None,
+    scores, cls_boxes, im_scale = detectron_test.im_detect_bbox(
+        detectron_model,
+        image,
+        detectron_config.TEST.SCALE,
+        detectron_config.TEST.MAX_SIZE,
+        boxes=None,
+    )
+    num_proposals = scores.shape[0]
+
+    rois = workspace.FetchBlob(f"gpu_{args.gpu_id}/rois")
+    features = workspace.FetchBlob(
+        f"gpu_{args.gpu_id}/{args.feat_name}"
+    )
+
+    cls_boxes = rois[:, 1:5] / im_scale
+    max_conf = np.zeros((num_proposals,), dtype=np.float32)
+    max_cls = np.zeros((num_proposals,), dtype=np.int32)
+    max_box = np.zeros((num_proposals, 4), dtype=np.float32)
+
+    for cls_ind in range(1, detectron_config.MODEL.NUM_CLASSES):
+        cls_scores = scores[:, cls_ind]
+        dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(
+            np.float32
         )
-        num_proposals = scores.shape[0]
+        keep = np.array(detectron_nms(dets, detectron_config.TEST.NMS))
+        idxs_update = np.where(cls_scores[keep] > max_conf[keep])
+        keep_idxs = keep[idxs_update]
+        max_conf[keep_idxs] = cls_scores[keep_idxs]
+        max_cls[keep_idxs] = cls_ind
+        max_box[keep_idxs] = dets[keep_idxs][:, :4]
 
-        rois = workspace.FetchBlob(f"gpu_{args.gpu_id}/rois")
-        obj_features = workspace.FetchBlob(
-            f"gpu_{args.gpu_id}/{args.feat_name}"
-        )
-
-        cls_boxes = rois[:, 1:5] / im_scale
-        max_conf = np.zeros((num_proposals,), dtype=np.float32)
-        max_cls = np.zeros((num_proposals,), dtype=np.int32)
-        max_box = np.zeros((num_proposals, 4), dtype=np.float32)
-
-        for cls_ind in range(1, detectron_config.MODEL.NUM_CLASSES):
-            cls_scores = scores[:, cls_ind]
-            dets = np.hstack((cls_boxes, cls_scores[:, np.newaxis])).astype(
-                np.float32
-            )
-            keep = np.array(detectron_nms(dets, detectron_config.TEST.NMS))
-            idxs_update = np.where(cls_scores[keep] > max_conf[keep])
-            keep_idxs = keep[idxs_update]
-            max_conf[keep_idxs] = cls_scores[keep_idxs]
-            max_cls[keep_idxs] = cls_ind
-            max_box[keep_idxs] = dets[keep_idxs][:, :4]
-
-        keep_boxes = np.argsort(max_conf)[::-1][: args.max_boxes]
-        obj_boxes = max_box[keep_boxes, :]
-        obj_classes = max_cls[keep_boxes]
-        obj_confidence = max_conf[keep_boxes]
-        obj_features = obj_features[keep_boxes, :]
-    return obj_boxes, obj_classes, obj_confidence, obj_features
+    keep_boxes = np.argsort(max_conf)[::-1][:args.max_boxes]
+    boxes = max_box[keep_boxes, :]
+    classes = max_cls[keep_boxes]
+    confidence = max_conf[keep_boxes]
+    features = features[keep_boxes, :]
+    return boxes, features, classes, confidence
 
 
 def image_id_from_path(image_path):
@@ -190,30 +189,38 @@ def main(args):
 
     # create an output HDF to save extracted features
     save_h5 = h5py.File(args.save_path, "w")
-    image_ids_h5d = save_h5.create_dataset("image_ids", (len(image_paths),))
-
-    # 'features' is a chunked dataset, each chunk holds features from one image
-    features_h5d = save_h5.create_dataset(
-        "features",
-        (len(image_paths), args.max_boxes, args.feat_dims),
-        chunks=(1, args.max_boxes, args.feat_dims),
+    image_ids_h5d = save_h5.create_dataset(
+        "image_ids", (len(image_paths),), dtype=int
     )
 
-    for idx, image_path in tqdm(enumerate(image_paths)):
-        try:
-            image_ids_h5d[idx] = image_id_from_path(image_path)
+    boxes_h5d = save_h5.create_dataset(
+        "boxes", (len(image_paths), args.max_boxes, 4),
+    )
+    features_h5d = save_h5.create_dataset(
+        "features", (len(image_paths), args.max_boxes, args.feat_dims),
+    )
+    classes_h5d = save_h5.create_dataset(
+        "classes", (len(image_paths), args.max_boxes, ),
+    )
+    scores_h5d = save_h5.create_dataset(
+        "scores", (len(image_paths), args.max_boxes, ),
+    )
 
-            image = cv2.imread(image_path)
-            # we only care about features, not classes
-            _, _, _, bottomup_features = detect_image(
-                detectron_model, image, args
-            )
-            features_h5d[idx] = bottomup_features
-        except:  # noqa: E722
-            print(
-                f"\nWarning: features from {idx}, {image_path} failed to "
-                "extract.\n"
-            )
+    with c2_utils.NamedCudaScope(args.gpu_id):
+        for idx, image_path in enumerate(tqdm(image_paths)):
+            try:
+                image_ids_h5d[idx] = image_id_from_path(image_path)
+
+                image = cv2.imread(image_path)
+                boxes, features, classes, scores = detect_image(detectron_model, image, args)
+
+                boxes_h5d[idx] = boxes
+                features_h5d[idx] = features
+                classes_h5d[idx] = classes
+                scores_h5d[idx] = scores
+            except:
+                print(f"\nWarning: Failed to extract features from {idx}, {image_path}.\n")
+
     # set current split name in attributrs of file, for tractability
     save_h5.attrs["split"] = args.split
     save_h5.close()
