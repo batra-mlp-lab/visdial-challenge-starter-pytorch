@@ -115,7 +115,7 @@ We provide a training script which accepts arguments as config files. The config
 Train the baseline model provided in this repository as:
 
 ```sh
-python train.py --config-yml configs/lf_disc_faster_rcnn_x101_bs32.yml --gpu-ids 0 1 # provide more ids for multi-GPU execution other args...
+python train.py --config-yml configs/lf_disc_faster_rcnn_x101.yml --gpu-ids 0 1 # provide more ids for multi-GPU execution other args...
 ```
 
 To extend this starter code, add your own encoder/decoder modules into their respective directories and include their names as choices in your config file. We have an `--overfit` flag, which can be useful for rapid debugging. It takes a batch of 5 examples and overfits the model on them.
