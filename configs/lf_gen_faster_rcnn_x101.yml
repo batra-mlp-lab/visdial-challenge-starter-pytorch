@@ -30,7 +30,7 @@ solver:
   initial_lr: 0.01
   training_splits: "train"  # "trainval"
   lr_gamma: 0.1
-  lr_milestones: # epochs when lr —> lr * lr_gamma
+  lr_milestones: # epochs when lr => lr * lr_gamma
     - 4
     - 7
     - 10

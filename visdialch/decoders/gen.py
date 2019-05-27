@@ -47,7 +47,8 @@ class GenerativeDecoder(nn.Module):
 
             ans_in = ans_in.view(batch_size * num_rounds, max_sequence_length)
 
-            # shape: (batch_size * num_rounds, word_embedding_size)
+            # shape: (batch_size * num_rounds, max_sequence_length,
+            #         word_embedding_size)
             ans_in_embed = self.word_embed(ans_in)
 
             # reshape encoder output to be set as initial hidden state of LSTM.
@@ -82,7 +83,7 @@ class GenerativeDecoder(nn.Module):
                 batch_size * num_rounds * num_options, max_sequence_length
             )
 
-            # shape: (batch_size * num_rounds * num_options,
+            # shape: (batch_size * num_rounds * num_options, max_sequence_length
             #         word_embedding_size)
             ans_in_embed = self.word_embed(ans_in)
 
