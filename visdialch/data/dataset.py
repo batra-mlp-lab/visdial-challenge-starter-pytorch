@@ -27,6 +27,7 @@ class VisDialDataset(Dataset):
         dense_annotations_jsonpath: Optional[str] = None,
         overfit: bool = False,
         in_memory: bool = False,
+        num_workers: int = 1,
         return_options: bool = True,
         add_boundary_toks: bool = False,
     ):
@@ -34,7 +35,11 @@ class VisDialDataset(Dataset):
         self.config = config
         self.return_options = return_options
         self.add_boundary_toks = add_boundary_toks
-        self.dialogs_reader = DialogsReader(dialogs_jsonpath)
+        self.dialogs_reader = DialogsReader(
+            dialogs_jsonpath,
+            num_examples=(5 if overfit else None),
+            num_workers=num_workers
+        )
 
         if "val" in self.split and dense_annotations_jsonpath is not None:
             self.annotations_reader = DenseAnnotationsReader(
