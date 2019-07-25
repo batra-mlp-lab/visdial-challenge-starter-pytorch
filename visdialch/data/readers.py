@@ -53,16 +53,19 @@ class DialogsReader(object):
             # Maintain questions and answers as a dict instead of list because
             # they are referenced by index in dialogs. We drop elements from
             # these in "overfit" mode to save time (tokenization is slow).
-            # Add empty question, answer - useful for padding dialog rounds
-            # for test split.
             self.questions = {
                 i: question for i, question in
-                enumerate(visdial_data["data"]["questions"] + [""])
+                enumerate(visdial_data["data"]["questions"])
             }
             self.answers = {
                 i: answer for i, answer in
-                enumerate(visdial_data["data"]["answers"] + [""])
+                enumerate(visdial_data["data"]["answers"])
             }
+
+            # Add empty question, answer - useful for padding dialog rounds
+            # for test split.
+            self.questions[-1] = ""
+            self.answers[-1] = ""
 
             # ``image_id``` serves as key for all three dicts here.
             self.captions: Dict[int, Any] = {}
@@ -89,7 +92,8 @@ class DialogsReader(object):
                     _dialog["dialog"].append({"question": -1, "answer": -1})
 
                 # Add empty answer (and answer options) if not provided
-                # (for test split).
+                # (for test split). We use "-1" as a key for empty questions
+                # and answers.
                 for i in range(len(_dialog["dialog"])):
                     if "answer" not in _dialog["dialog"][i]:
                         _dialog["dialog"][i]["answer"] = -1
