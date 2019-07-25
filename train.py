@@ -129,6 +129,7 @@ train_dataset = VisDialDataset(
     args.train_json,
     overfit=args.overfit,
     in_memory=args.in_memory,
+    num_workers=args.cpu_workers,
     return_options=True if config["model"]["decoder"] == "disc" else False,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
@@ -145,6 +146,7 @@ val_dataset = VisDialDataset(
     args.val_dense_json,
     overfit=args.overfit,
     in_memory=args.in_memory,
+    num_workers=args.cpu_workers,
     return_options=True,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
