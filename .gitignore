@@ -23,6 +23,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.json
+*.txt
 MANIFEST
 
 # Datasets, pretrained models, checkpoints and preprocessed files
