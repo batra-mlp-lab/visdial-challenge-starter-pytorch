@@ -120,6 +120,8 @@ for arg in vars(args):
     print("{:<20}: {}".format(arg, getattr(args, arg)))
 
 
+raise Exception()
+
 # =============================================================================
 #   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, SCHEDULER
 # =============================================================================

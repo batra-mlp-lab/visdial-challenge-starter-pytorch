@@ -38,3 +38,5 @@ logs/
 venv/
 ENV/
 langauge model/visdial_1.0_train.json
+
+.idea
