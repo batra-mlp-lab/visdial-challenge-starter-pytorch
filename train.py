@@ -259,8 +259,8 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
     print(f"\nTraining for epoch {epoch}:")
     # for i, batch in enumerate(tqdm(combined_dataloader)):
     for i, batch in enumerate(combined_dataloader):
-        for key in batch:
-            batch[key] = batch[key].to(device)
+        # for key in batch:
+        #     batch[key] = batch[key].to(device)
 
         optimizer.zero_grad()
         output = model(batch)
