@@ -267,11 +267,25 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
         #     batch[key] = batch[key].to(device)
 
         print([key for key in batch])
-        for key in batch:
-            print(key)
-            print(batch.shape)
+
+        # shape: (batch_size, img_feature_size) - CNN fc7 features
+        # shape: (batch_size, num_proposals, img_feature_size) - RCNN features
+        img = batch["img_feat"]
+        # shape: (batch_size, 10, max_sequence_length)
+        ques = batch["ques"]
+        # shape: (batch_size, 10, max_sequence_length * 2 * 10)
+        # concatenated qa * 10 rounds
+        hist = batch["hist"]
+        # num_rounds = 10, even for test (padded dialog rounds at the end)
+
+        print(img.shape)
+        print(ques.shape)
+        print(hist.shape)
 
 
+        raise Exception()
+
+    break
 
         # optimizer.zero_grad()
         # output = model(batch)
@@ -280,12 +294,6 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
         #     if config["model"]["decoder"] == "disc"
         #     else batch["ans_out"]
         # )
-
-
-        print(123)
-        raise Exception()
-
-    break
 
     #     batch_loss = criterion(
     #         output.view(-1, output.size(-1)), target.view(-1)
