@@ -242,6 +242,8 @@ else:
 # Forever increasing counter to keep track of iterations (for tensorboard log).
 global_iteration_step = start_epoch * iterations
 
+print('here!!!!!!')
+
 for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
     # -------------------------------------------------------------------------
