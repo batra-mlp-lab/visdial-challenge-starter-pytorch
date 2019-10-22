@@ -258,17 +258,28 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
     print(f"\nTraining for epoch {epoch}:")
     # for i, batch in enumerate(tqdm(combined_dataloader)):
+
+
+
+    # debugging
     for i, batch in enumerate(combined_dataloader):
         # for key in batch:
         #     batch[key] = batch[key].to(device)
 
-        optimizer.zero_grad()
-        output = model(batch)
-        target = (
-            batch["ans_ind"]
-            if config["model"]["decoder"] == "disc"
-            else batch["ans_out"]
-        )
+        print([key for key in batch])
+        for key in batch:
+            print(key)
+            print(batch.shape)
+
+
+
+        # optimizer.zero_grad()
+        # output = model(batch)
+        # target = (
+        #     batch["ans_ind"]
+        #     if config["model"]["decoder"] == "disc"
+        #     else batch["ans_out"]
+        # )
 
 
         print(123)
