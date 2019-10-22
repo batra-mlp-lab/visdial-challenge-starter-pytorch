@@ -120,8 +120,6 @@ for arg in vars(args):
     print("{:<20}: {}".format(arg, getattr(args, arg)))
 
 
-raise Exception()
-
 # =============================================================================
 #   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, SCHEDULER
 # =============================================================================
@@ -266,6 +264,11 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
             if config["model"]["decoder"] == "disc"
             else batch["ans_out"]
         )
+
+
+        print(123)
+        raise Exception()
+
         batch_loss = criterion(
             output.view(-1, output.size(-1)), target.view(-1)
         )
