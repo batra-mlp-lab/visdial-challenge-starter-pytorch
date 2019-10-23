@@ -257,6 +257,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
             batch[key] = batch[key].to(device)
 
         print(123)
+        raise Exception()
 
         optimizer.zero_grad()
         output = model(batch)
