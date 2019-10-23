@@ -91,4 +91,4 @@ class DiscriminativeDecoder(nn.Module):
         scores = torch.sum(options_embed * encoder_output, 1)
         # shape: (batch_size, num_rounds, num_options)
         scores = scores.view(batch_size, num_rounds, num_options)
-        return scores
+        return scores  # unnormalized logits

@@ -192,7 +192,6 @@ else:
 
 def lr_lambda_fun(current_iteration: int) -> float:
     """Returns a learning rate multiplier.
-
     Till `warmup_epochs`, learning rate linearly increases to `initial_lr`,
     and then gets multiplied by `lr_gamma` every time a milestone is crossed.
     """
@@ -242,8 +241,6 @@ else:
 # Forever increasing counter to keep track of iterations (for tensorboard log).
 global_iteration_step = start_epoch * iterations
 
-print('here!!!!!!')
-
 for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
     # -------------------------------------------------------------------------
@@ -254,96 +251,67 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
     else:
         combined_dataloader = itertools.chain(train_dataloader)
 
-    print('321')
-
     print(f"\nTraining for epoch {epoch}:")
-    # for i, batch in enumerate(tqdm(combined_dataloader)):
+    for i, batch in enumerate(tqdm(combined_dataloader)):
+        for key in batch:
+            batch[key] = batch[key].to(device)
 
+        optimizer.zero_grad()
+        output = model(batch)
+        target = (
+            batch["ans_ind"]
+            if config["model"]["decoder"] == "disc"
+            else batch["ans_out"]
+        )
+        batch_loss = criterion(
+            output.view(-1, output.size(-1)), target.view(-1)
+        )
+        batch_loss.backward()
+        optimizer.step()
 
+        summary_writer.add_scalar(
+            "train/loss", batch_loss, global_iteration_step
+        )
+        summary_writer.add_scalar(
+            "train/lr", optimizer.param_groups[0]["lr"], global_iteration_step
+        )
 
-    # debugging
-    for i, batch in enumerate(combined_dataloader):
-        # for key in batch:
-        #     batch[key] = batch[key].to(device)
+        scheduler.step(global_iteration_step)
+        global_iteration_step += 1
+        torch.cuda.empty_cache()
 
-        print([key for key in batch])
+    # -------------------------------------------------------------------------
+    #   ON EPOCH END  (checkpointing and validation)
+    # -------------------------------------------------------------------------
+    checkpoint_manager.step()
 
-        # shape: (batch_size, img_feature_size) - CNN fc7 features
-        # shape: (batch_size, num_proposals, img_feature_size) - RCNN features
-        img = batch["img_feat"]
-        # shape: (batch_size, 10, max_sequence_length)
-        ques = batch["ques"]
-        # shape: (batch_size, 10, max_sequence_length * 2 * 10)
-        # concatenated qa * 10 rounds
-        hist = batch["hist"]
-        # num_rounds = 10, even for test (padded dialog rounds at the end)
+    # Validate and report automatic metrics.
+    if args.validate:
 
-        print(img.shape)
-        print(ques.shape)
-        print(hist.shape)
+        # Switch dropout, batchnorm etc to the correct mode.
+        model.eval()
 
+        print(f"\nValidation after epoch {epoch}:")
+        for i, batch in enumerate(tqdm(val_dataloader)):
+            for key in batch:
+                batch[key] = batch[key].to(device)
+            with torch.no_grad():
+                output = model(batch)
+            sparse_metrics.observe(output, batch["ans_ind"])
+            if "gt_relevance" in batch:
+                output = output[
+                    torch.arange(output.size(0)), batch["round_id"] - 1, :
+                ]
+                ndcg.observe(output, batch["gt_relevance"])
 
-        raise Exception()
+        all_metrics = {}
+        all_metrics.update(sparse_metrics.retrieve(reset=True))
+        all_metrics.update(ndcg.retrieve(reset=True))
+        for metric_name, metric_value in all_metrics.items():
+            print(f"{metric_name}: {metric_value}")
+        summary_writer.add_scalars(
+            "metrics", all_metrics, global_iteration_step
+        )
 
-    break
-
-        # optimizer.zero_grad()
-        # output = model(batch)
-        # target = (
-        #     batch["ans_ind"]
-        #     if config["model"]["decoder"] == "disc"
-        #     else batch["ans_out"]
-        # )
-
-    #     batch_loss = criterion(
-    #         output.view(-1, output.size(-1)), target.view(-1)
-    #     )
-    #     batch_loss.backward()
-    #     optimizer.step()
-    #
-    #     summary_writer.add_scalar(
-    #         "train/loss", batch_loss, global_iteration_step
-    #     )
-    #     summary_writer.add_scalar(
-    #         "train/lr", optimizer.param_groups[0]["lr"], global_iteration_step
-    #     )
-    #
-    #     scheduler.step(global_iteration_step)
-    #     global_iteration_step += 1
-    #     torch.cuda.empty_cache()
-    #
-    # # -------------------------------------------------------------------------
-    # #   ON EPOCH END  (checkpointing and validation)
-    # # -------------------------------------------------------------------------
-    # checkpoint_manager.step()
-    #
-    # # Validate and report automatic metrics.
-    # if args.validate:
-    #
-    #     # Switch dropout, batchnorm etc to the correct mode.
-    #     model.eval()
-    #
-    #     print(f"\nValidation after epoch {epoch}:")
-    #     for i, batch in enumerate(tqdm(val_dataloader)):
-    #         for key in batch:
-    #             batch[key] = batch[key].to(device)
-    #         with torch.no_grad():
-    #             output = model(batch)
-    #         sparse_metrics.observe(output, batch["ans_ind"])
-    #         if "gt_relevance" in batch:
-    #             output = output[
-    #                 torch.arange(output.size(0)), batch["round_id"] - 1, :
-    #             ]
-    #             ndcg.observe(output, batch["gt_relevance"])
-    #
-    #     all_metrics = {}
-    #     all_metrics.update(sparse_metrics.retrieve(reset=True))
-    #     all_metrics.update(ndcg.retrieve(reset=True))
-    #     for metric_name, metric_value in all_metrics.items():
-    #         print(f"{metric_name}: {metric_value}")
-    #     summary_writer.add_scalars(
-    #         "metrics", all_metrics, global_iteration_step
-    #     )
-    #
-    #     model.train()
-    #     torch.cuda.empty_cache()
+        model.train()
+        torch.cuda.empty_cache()
