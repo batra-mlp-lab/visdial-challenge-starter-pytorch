@@ -124,6 +124,8 @@ for arg in vars(args):
 #   SETUP DATASET, DATALOADER, MODEL, CRITERION, OPTIMIZER, SCHEDULER
 # =============================================================================
 
+print('zhihao1')
+
 train_dataset = VisDialDataset(
     config["dataset"],
     args.train_json,
@@ -157,6 +159,8 @@ val_dataloader = DataLoader(
     else 5,
     num_workers=args.cpu_workers,
 )
+
+print('zhihao2')
 
 # Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
