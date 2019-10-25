@@ -144,11 +144,22 @@ val_dataset = VisDialDataset(
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
 
+
+def get_random_indices(n, sample_rate):
+    # excluding n
+    indices = list(range(n))
+    np.random.shuffle(indices)
+    return indices[:int(n * sample_rate)]
+
+
+sr = 0.1
+train_sampler = SubsetRandomSampler(get_random_indices(len(train_dataset), sr))
 train_dataloader = DataLoader(
     train_dataset,
     batch_size=config["solver"]["batch_size"],
     num_workers=args.cpu_workers,
     shuffle=True,
+    sampler=train_sampler,
 )
 val_dataloader = DataLoader(
     val_dataset,
@@ -158,8 +169,6 @@ val_dataloader = DataLoader(
     num_workers=args.cpu_workers,
 )
 
-# train_sampler = SubsetRandomSampler(train_indices)
-# valid_sampler = SubsetRandomSampler(val_indices)
 print('train data size is %d' % len(train_dataloader))
 print('val data size is %d' % len(val_dataloader))
 
