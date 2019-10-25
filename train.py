@@ -18,6 +18,7 @@ from visdialch.model import EncoderDecoderModel
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
 from torch.utils.data.sampler import SubsetRandomSampler
+import numpy as np
 
 
 parser = argparse.ArgumentParser()
