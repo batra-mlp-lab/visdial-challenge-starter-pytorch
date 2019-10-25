@@ -133,6 +133,13 @@ train_dataset = VisDialDataset(
     return_options=True if config["model"]["decoder"] == "disc" else False,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
+train_dataloader = DataLoader(
+    train_dataset,
+    batch_size=config["solver"]["batch_size"],
+    num_workers=args.cpu_workers,
+    shuffle=True,
+)
+
 val_dataset = VisDialDataset(
     config["dataset"],
     args.val_json,
@@ -143,19 +150,6 @@ val_dataset = VisDialDataset(
     return_options=True,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
-
-# Take only sample_rate of training data b/c the full dataset is too big.
-sample_rate = 0.025
-train_sample_size = int(len(train_dataset) * sample_rate)
-train_dataset, _ = torch.utils.data.random_split(train_dataset,
-                                                 [train_sample_size, len(train_dataset) - train_sample_size])
-
-train_dataloader = DataLoader(
-    train_dataset,
-    batch_size=config["solver"]["batch_size"],
-    num_workers=args.cpu_workers,
-    shuffle=True,
-)
 val_dataloader = DataLoader(
     val_dataset,
     batch_size=config["solver"]["batch_size"]
@@ -163,10 +157,6 @@ val_dataloader = DataLoader(
     else 5,
     num_workers=args.cpu_workers,
 )
-
-print('train_dataset size is %d' % len(train_dataset))
-print('val_dataset is %d' % len(val_dataset))
-
 
 # Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
