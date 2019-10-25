@@ -133,13 +133,6 @@ train_dataset = VisDialDataset(
     return_options=True if config["model"]["decoder"] == "disc" else False,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
-train_dataloader = DataLoader(
-    train_dataset,
-    batch_size=config["solver"]["batch_size"],
-    num_workers=args.cpu_workers,
-    shuffle=True,
-)
-
 val_dataset = VisDialDataset(
     config["dataset"],
     args.val_json,
@@ -150,6 +143,13 @@ val_dataset = VisDialDataset(
     return_options=True,
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
+
+train_dataloader = DataLoader(
+    train_dataset,
+    batch_size=config["solver"]["batch_size"],
+    num_workers=args.cpu_workers,
+    shuffle=True,
+)
 val_dataloader = DataLoader(
     val_dataset,
     batch_size=config["solver"]["batch_size"]
@@ -158,9 +158,14 @@ val_dataloader = DataLoader(
     num_workers=args.cpu_workers,
 )
 
-print('train data size is %d' % len(train_dataset))
-print('val data size is %d' % len(val_dataset))
+# train_sampler = SubsetRandomSampler(train_indices)
+# valid_sampler = SubsetRandomSampler(val_indices)
+print('train data size is %d' % len(train_dataloader))
+print('val data size is %d' % len(val_dataloader))
+
 raise Exception()
+
+
 
 # Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
