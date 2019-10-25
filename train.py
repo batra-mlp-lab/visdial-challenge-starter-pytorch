@@ -145,7 +145,7 @@ val_dataset = VisDialDataset(
 )
 
 # Take only sample_rate of training data b/c the full dataset is too big.
-sample_rate = 0.1
+sample_rate = 0.01
 train_sample_size = int(len(train_dataset) * sample_rate)
 train_dataset, _ = torch.utils.data.random_split(train_dataset,
                                                  [train_sample_size, len(train_dataset) - train_sample_size])
@@ -164,11 +164,8 @@ val_dataloader = DataLoader(
     num_workers=args.cpu_workers,
 )
 
-print('train data size is %d' % len(train_dataloader))
-print('val data size is %d' % len(val_dataloader))
-
-raise Exception()
-
+print('train_dataset size is %d' % len(train_dataset))
+print('val_dataset is %d' % len(val_dataset))
 
 
 # Pass vocabulary to construct Embedding layer.
