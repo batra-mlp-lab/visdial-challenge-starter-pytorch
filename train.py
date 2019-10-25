@@ -160,6 +160,7 @@ val_dataloader = DataLoader(
 
 print('train data size is %d' % len(train_dataset))
 print('val data size is %d' % len(val_dataset))
+raise Exception()
 
 # Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
