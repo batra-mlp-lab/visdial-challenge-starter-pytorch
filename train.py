@@ -161,7 +161,7 @@ train_dataloader = DataLoader(
     train_dataset,
     batch_size=config["solver"]["batch_size"],
     num_workers=args.cpu_workers,
-    shuffle=True,
+    # shuffle=True,
     sampler=train_sampler,
 )
 val_dataloader = DataLoader(
