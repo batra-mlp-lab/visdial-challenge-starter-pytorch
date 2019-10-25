@@ -145,7 +145,7 @@ val_dataset = VisDialDataset(
 )
 
 # Take only sample_rate of training data b/c the full dataset is too big.
-sample_rate = 0.01
+sample_rate = 0.025
 train_sample_size = int(len(train_dataset) * sample_rate)
 train_dataset, _ = torch.utils.data.random_split(train_dataset,
                                                  [train_sample_size, len(train_dataset) - train_sample_size])
