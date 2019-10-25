@@ -17,6 +17,8 @@ from visdialch.metrics import SparseGTMetrics, NDCG
 from visdialch.model import EncoderDecoderModel
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
+from torch.utils.data.sampler import SubsetRandomSampler
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
