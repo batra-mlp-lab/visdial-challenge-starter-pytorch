@@ -17,9 +17,6 @@ from visdialch.metrics import SparseGTMetrics, NDCG
 from visdialch.model import EncoderDecoderModel
 from visdialch.utils.checkpointing import CheckpointManager, load_checkpoint
 
-# from torch.utils.data.sampler import SubsetRandomSampler
-# import numpy as np
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -147,17 +144,9 @@ val_dataset = VisDialDataset(
     add_boundary_toks=False if config["model"]["decoder"] == "disc" else True,
 )
 
-
-# def get_random_indices(n, sample_rate):
-#     # excluding n
-#     indices = list(range(n))
-#     np.random.shuffle(indices)
-#     return indices[:int(n * sample_rate)]
-
-
+# Take only sample_rate of training data b/c the full dataset is too big.
 sample_rate = 0.1
 train_sample_size = int(len(train_dataset) * sample_rate)
-# train_sampler = SubsetRandomSampler(get_random_indices(len(train_dataset), sr))
 train_dataset, _ = torch.utils.data.random_split(train_dataset,
                                                  [train_sample_size, len(train_dataset) - train_sample_size])
 
@@ -166,7 +155,6 @@ train_dataloader = DataLoader(
     batch_size=config["solver"]["batch_size"],
     num_workers=args.cpu_workers,
     shuffle=True,
-    # sampler=train_sampler,
 )
 val_dataloader = DataLoader(
     val_dataset,
