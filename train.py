@@ -158,6 +158,11 @@ val_dataloader = DataLoader(
     num_workers=args.cpu_workers,
 )
 
+
+print('train_dataset size: %d' % len(train_dataset))
+print('val_dataset size: %d' % len(val_dataset))
+raise Exception()
+
 # Pass vocabulary to construct Embedding layer.
 encoder = Encoder(config["model"], train_dataset.vocabulary)
 decoder = Decoder(config["model"], train_dataset.vocabulary)
