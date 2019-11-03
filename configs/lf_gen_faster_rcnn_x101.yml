@@ -25,7 +25,7 @@ model:
 
 # Optimization related arguments
 solver:
-  batch_size: 224 # 56 x num_gpus is a good rule of thumb
+  batch_size: 56 # 56 x num_gpus is a good rule of thumb
   num_epochs: 20
   initial_lr: 0.01
   training_splits: "train"  # "trainval"
