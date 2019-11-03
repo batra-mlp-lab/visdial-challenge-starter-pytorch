@@ -38,10 +38,11 @@ class DynamicRNN(nn.Module):
             hx = initial_state
             assert hx[0].size(0) == self.rnn_model.num_layers
         else:
-            hx = None
+            sorted_hx = None
 
         self.rnn_model.flatten_parameters()
-        outputs, (h_n, c_n) = self.rnn_model(packed_seq_input, hx)
+
+        outputs, (h_n, c_n) = self.rnn_model(packed_seq_input, sorted_hx)
 
         # pick hidden and cell states of last layer
         h_n = h_n[-1].index_select(dim=0, index=bwd_order)
@@ -49,7 +50,8 @@ class DynamicRNN(nn.Module):
 
         outputs = pad_packed_sequence(
             outputs, batch_first=True, total_length=max_sequence_length
-        )
+        )[0].index_select(dim=0, index=bwd_order)
+            
         return outputs, (h_n, c_n)
 
     @staticmethod
