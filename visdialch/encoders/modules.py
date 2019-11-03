@@ -122,8 +122,8 @@ class PAIR_MODULE(nn.Module):
 
         delta_t = torch.tril(torch.ones(size=[num_rounds, num_rounds], requires_grad=False)).cumsum(dim=0) # (num_rounds, num_rounds)
         delta_t = delta_t.view(1, num_rounds, num_rounds, 1).repeat(batch_size, 1, 1, 1) # (batch_size, num_rounds, num_rounds, 1)
-        # delta_t = delta_t.cuda()
-        att_embed = torch.cat((score, delta_t), dim=-1).cuda() # (batch_size, num_rounds, num_rounds, lstm_hidden_size*2)
+        delta_t = delta_t.cuda()
+        att_embed = torch.cat((score, delta_t), dim=-1) # (batch_size, num_rounds, num_rounds, lstm_hidden_size*2)
         
         hist_logits = self.att(att_embed).squeeze(-1) # (batch_size, num_rounds, num_rounds)
 
