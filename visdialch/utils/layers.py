@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+
 class GatedTrans(nn.Module):
     """docstring for GatedTrans"""
     def __init__(self, in_dim, out_dim):
@@ -28,6 +29,7 @@ class GatedTrans(nn.Module):
         x_out = x_y*x_g
 
         return x_out
+
 
 class Q_ATT(nn.Module):
     """Self attention module of questions."""
@@ -65,15 +67,15 @@ class Q_ATT(nn.Module):
         num_rounds = ques_word.size(1)
         quen_len_max = ques_word.size(2)
 
-        ques_embed = self.embed(ques_word_encoded) # shape: (batch_size, num_rounds, quen_len_max, embed_dim)
-        ques_norm = F.normalize(ques_embed, p=2, dim=-1) # shape: (batch_size, num_rounds, quen_len_max, embed_dim) 
+        ques_embed = self.embed(ques_word_encoded)  # shape: (batch_size, num_rounds, quen_len_max, lstm_hidden_size)
+        ques_norm = F.normalize(ques_embed, p=2, dim=-1)  # shape: (batch_size, num_rounds, quen_len_max, embed_dim)
         
         att = self.att(ques_norm).squeeze(-1) # shape: (batch_size, num_rounds, quen_len_max)
         # ignore <pad> word
         att = self.softmax(att)
         att = att*ques_not_pad # shape: (batch_size, num_rounds, quen_len_max)
         att = att / torch.sum(att, dim=-1, keepdim=True) # shape: (batch_size, num_rounds, quen_len_max)
-        feat = torch.sum(att.unsqueeze(-1) * ques_word, dim=-2) # shape: (batch_size, num_rounds, rnn_dim)
+        feat = torch.sum(att.unsqueeze(-1) * ques_word, dim=-2) # shape: (batch_size, num_rounds, word_embed_dim)
         
         return feat, att
 

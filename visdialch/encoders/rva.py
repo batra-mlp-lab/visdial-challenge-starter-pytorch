@@ -6,6 +6,7 @@ from visdialch.utils import DynamicRNN
 from visdialch.utils import Q_ATT, H_ATT, V_Filter
 from .modules import RvA_MODULE
 
+
 class RvAEncoder(nn.Module):
     def __init__(self, config, vocabulary):
         super().__init__()
@@ -78,20 +79,20 @@ class RvAEncoder(nn.Module):
         # ques_not_pad - shape: (batch_size, num_rounds, quen_len_max)
         # ques_encoded - shape: (batch_size, num_rounds, lstm_hidden_size)
         ques_word_embed, ques_word_encoded, ques_not_pad, ques_encoded = self.init_q_embed(batch)
-        # hist_word_embed - shape: (batch_size, num_rounds, quen_len_max, word_embedding_size)
+        # hist_word_embed - shape: (batch_size, num_rounds, hist_len_max, word_embedding_size)
         # hist_encoded - shape: (batch_size, num_rounds, lstm_hidden_size)
         hist_word_embed, hist_encoded = self.init_h_embed(batch)
-        # cap_word_embed - shape: (batch_size, num_rounds, quen_len_max, word_embedding_size)
-        # cap_word_encoded - shape: (batch_size, num_rounds, quen_len_max, lstm_hidden_size)
-        # cap_not_pad - shape: (batch_size, num_rounds, quen_len_max)
+        # cap_word_embed - shape: (batch_size, 1, quen_len_max, word_embedding_size)
+        # cap_word_encoded - shape: (batch_size, 1, quen_len_max, lstm_hidden_size)
+        # cap_not_pad - shape: (batch_size, 1, quen_len_max)
         cap_word_embed, cap_word_encoded, cap_not_pad = self.init_cap_embed(batch)
 
         # question feature for RvA
-        # ques_ref_feat - shape: (batch_size, num_rounds, lstm_hidden_size)
+        # ques_ref_feat - shape: (batch_size, num_rounds, word_embedding_size)
         # ques_ref_att - shape: (batch_size, num_rounds, quen_len_max)
         ques_ref_feat, ques_ref_att = self.Q_ATT_ref(ques_word_embed, ques_word_encoded, ques_not_pad)
-        # cap_ref_feat - shape: (batch_size, num_rounds, lstm_hidden_size)
-        cap_ref_feat, _ = self.Q_ATT_ref(cap_word_embed, cap_word_encoded, cap_not_pad) 
+        # cap_ref_feat - shape: (batch_size, 1, word_embedding_size)
+        cap_ref_feat, _ = self.Q_ATT_ref(cap_word_embed, cap_word_encoded, cap_not_pad)
 
         # RvA module
         ques_feat = (cap_ref_feat, ques_ref_feat, ques_encoded)
@@ -103,11 +104,11 @@ class RvAEncoder(nn.Module):
         # ans_feat for joint embedding
         # hist_ans_feat - shape: (batch_size, num_rounds, lstm_hidden_size*2)
         hist_ans_feat = self.H_ATT_ans(hist_encoded, ques_encoded)
-        # ques_ans_feat - shape: (batch_size, num_rounds, word_embedding_size)
+        # ques_ans_feat - shape: (batch_size, num_rounds, lstm_hidden_size)
         # ques_ans_att - shape: (batch_size, num_rounds, quen_len_max)
         ques_ans_feat, ques_ans_att = self.Q_ATT_ans(ques_word_embed, ques_word_encoded, ques_not_pad)
         # img_ans_feat - shape: (batch_size, num_rounds, img_feature_size)
-        img_ans_feat  = self.V_Filter(img_feat, ques_ans_feat)
+        img_ans_feat = self.V_Filter(img_feat, ques_ans_feat)
 
         # joint embedding
         fused_vector = torch.cat((img_ans_feat, ques_ans_feat, hist_ans_feat), -1)
@@ -161,10 +162,10 @@ class RvAEncoder(nn.Module):
 
         # caption feature like question
         cap_not_pad = (cap!=0).float() # shape: (batch_size, 1, hist_len_max)
-        cap_word_embed = self.word_embed(cap.squeeze(1)) # shape: (batch_size*1, hist_len_max, lstm_hidden_size)
+        cap_word_embed = self.word_embed(cap.squeeze(1)) # shape: (batch_size*1, hist_len_max, word_embedding_size)
         cap_len = batch['hist_len'][:, :1]
         cap_word_encoded, _ = self.ques_rnn(cap_word_embed, cap_len) # shape: (batch_size*1, hist_len_max, lstm_hidden_size)
         cap_word_encoded = cap_word_encoded.unsqueeze(1) # shape: (batch_size, 1, hist_len_max, lstm_hidden_size)
-        cap_word_embed = cap_word_embed.unsqueeze(1) # shape: (batch_size, 1, hist_len_max, lstm_hidden_size)
+        cap_word_embed = cap_word_embed.unsqueeze(1) # shape: (batch_size, 1, hist_len_max, word_embedding_size)
 
         return cap_word_embed, cap_word_encoded, cap_not_pad

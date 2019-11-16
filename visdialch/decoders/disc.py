@@ -75,7 +75,7 @@ class DiscriminativeDecoder(nn.Module):
         options_embed[nonzero_options_length_indices] = nonzero_options_embed
 
         # Repeat encoder output for every option.
-        # shape: (batch_size, num_rounds, num_options, max_sequence_length)
+        # shape: (batch_size, num_rounds, num_options, lstm_hidden_state)
         encoder_output = encoder_output.unsqueeze(2).repeat(
             1, 1, num_options, 1
         )
