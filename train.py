@@ -113,6 +113,7 @@ device = (
     if args.gpu_ids[0] >= 0
     else torch.device("cpu")
 )
+torch.cuda.set_device(device)
 
 # Print config and args.
 print(yaml.dump(config, default_flow_style=False))
