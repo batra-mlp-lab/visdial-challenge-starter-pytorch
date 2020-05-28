@@ -280,7 +280,7 @@ for epoch in range(start_epoch, config["solver"]["num_epochs"]):
 
         scheduler.step(global_iteration_step)
         global_iteration_step += 1
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
     # -------------------------------------------------------------------------
     #   ON EPOCH END  (checkpointing and validation)
